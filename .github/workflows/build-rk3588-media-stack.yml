@@ -3,7 +3,15 @@ name: Build Full RK3588 Media Stack (.deb) for Ubuntu 26.10
 on:
   workflow_dispatch:
   push:
-    branches: [ main, master ]
+    branches: [ main ]
+    paths:
+      - '.github/workflows/build-rk3588-media-stack*.yml'
+      - 'rk3588-ubuntu2610.ini'
+
+env:
+  SYSROOT: /opt/sysroot
+  DEB_OUT: /opt/debs
+  UBUNTU_CODENAME: stonking
 
 jobs:
   build:
@@ -11,11 +19,6 @@ jobs:
     container:
       image: ubuntu:26.10
       options: --privileged
-
-    env:
-      SYSROOT: /opt/sysroot
-      DEB_OUT: /opt/debs
-      UBUNTU_CODENAME: stonking
 
     steps:
       - name: Checkout repository
@@ -38,7 +41,7 @@ jobs:
             ln -sf "$HOME/.cargo/bin/bindgen" /usr/local/bin/bindgen
           fi
 
-      - name: Generate Meson Cross-File
+      - name: Generate Meson cross-file
         run: |
           cat <<'EOF' > rk3588-ubuntu2610.ini
           [binaries]
@@ -78,7 +81,7 @@ jobs:
           mkdir -p $SYSROOT $DEB_OUT
           mmdebstrap --arch=arm64 --variant=minbase \
             --components=main,universe \
-            --include=libc6-dev,libstd-rust-dev,libdrm-dev,libdisplay-info-dev,libudev-dev,libwayland-dev,libwayland-egl-backend-dev,libx11-dev,libxext-dev,libxfixes-dev,libxpresent-dev,libxcb-glx0-dev,libxcb-shm0-dev,libx11-xcb-dev,libxcb-dri2-0-dev,libxcb-dri3-dev,libxcb-present-dev,libxshmfence-dev,libxxf86vm-dev,libxrandr-dev,libelf-dev,libexpat1-dev,zlib1g-dev,libzstd-dev,libass-dev,libfreetype-dev,libfontconfig-dev,libfribidi-dev,libharfbuzz-dev,libplacebo-dev,libvulkan-dev,libpulse-dev,libasound2-dev,libpipewire-0.3-dev,libsdl2-dev \
+            --include=libc6-dev,libstd-rust-dev,libdrm-dev,libdisplay-info-dev,libudev-dev,libwayland-dev,libwayland-egl-backend-dev,libx11-dev,libxext-dev,libxfixes-dev,libxpresent-dev,libxcb-glx0-dev,libxcb-shm0-dev,libx11-xcb-dev,libxcb-dri2-0-dev,libxcb-dri3-dev,libxcb-present-dev,libxshmfence-dev,libxxf86vm-dev,libxrandr-dev,libelf-dev,libexpat1-dev,zlib1g-dev,libzstd-dev,libass-dev,libfreetype-dev,libfontconfig-dev,libfribidi-dev,libharfbuzz-dev,libplacebo-dev,libvulkan-dev,libpulse-dev,libasound2-dev,libpipewire-0.3-dev,libsdl2-dev,libluajit-5.1-dev \
             $UBUNTU_CODENAME $SYSROOT http://ports.ubuntu.com/ubuntu-ports
           find $SYSROOT -lname '/*' -exec sh -c 'ln -snf "$SYSROOT$(readlink "$1")" "$1"' _ {} \;
           HOST_RUSTLIB="$(rustc --print sysroot)/lib/rustlib"
@@ -103,9 +106,9 @@ jobs:
           Maintainer: RK3588 Builder <builder@local>
           Description: Mali-G610 CSF firmware (mali_csffw.bin) for Panthor DRM driver on RK3588
           EOF
-          dpkg-deb --build --root-owner-group $PKG_DIR $DEB_OUT/firmware-mali-rk3588_${FW_VER}_arm64.deb
+          dpkg-deb --build --root-owner-group "$PKG_DIR" "$DEB_OUT/firmware-mali-rk3588_${FW_VER}_arm64.deb"
 
-      - name: Build and Package Mesa (Panfrost / Panthor)
+      - name: Build and Package Mesa (Panfrost / Panthor / PanVK)
         run: |
           git clone --depth 1 https://gitlab.freedesktop.org/mesa/mesa.git /tmp/mesa
           MESA_BASE=$(cat /tmp/mesa/VERSION | tr -d '[:space:]' | sed 's/-devel//')
@@ -257,6 +260,7 @@ jobs:
             --buildtype=release \
             -Dgpl=true \
             -Dlibmpv=true \
+            -Dlua=luajit \
             -Ddrm=enabled \
             -Dgbm=enabled \
             -Degl-drm=enabled \
@@ -282,10 +286,10 @@ jobs:
           Version: ${MPV_VER}-1rk3588
           Architecture: arm64
           Maintainer: RK3588 Builder <builder@local>
-          Depends: ffmpeg-rk3588, mesa-rk3588, libplacebo360 | libplacebo349 | libplacebo338, libdisplay-info3, libxpresent1, libdrm2, libwayland-client0, libx11-6, libpipewire-0.3-0t64, libpulse0, libasound2t64, libvulkan1
+          Depends: ffmpeg-rk3588, mesa-rk3588, libluajit-5.1-2, libplacebo360 | libplacebo349 | libplacebo338, libdisplay-info3, libxpresent1, libdrm2, libwayland-client0, libx11-6, libpipewire-0.3-0t64, libpulse0, libasound2t64, libvulkan1
           Provides: mpv, libmpv2
           Replaces: mpv
-          Description: MPV media player with RK3588 hardware video decoding and Vulkan/DRM support
+          Description: MPV media player with RK3588 hardware video decoding, LuaJIT OSC and Vulkan/DRM support
           EOF
           dpkg-deb --build --root-owner-group "$PKG_DIR" "$DEB_OUT/mpv-rk3588_${MPV_VER}_arm64.deb"
 
