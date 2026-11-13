@@ -30,18 +30,7 @@ jobs:
             meson ninja-build python3-mako python3-yaml glslang-tools \
             wayland-protocols libwayland-bin flex bison git cmake nasm dpkg-dev curl ca-certificates
 
-      - name: Create ARM64 Ubuntu 26.10 Sysroot
-        run: |
-          mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc || true
-          /usr/lib/systemd/systemd-binfmt || true
-          mkdir -p $SYSROOT $DEB_OUT
-          mmdebstrap --arch=arm64 --variant=minbase \
-            --components=main,universe \
-            --include=libc6-dev,libdrm-dev,libudev-dev,libwayland-dev,libwayland-egl-backend-dev,libx11-dev,libxext-dev,libxfixes-dev,libxcb-glx0-dev,libxcb-shm0-dev,libx11-xcb-dev,libxcb-dri2-0-dev,libxcb-dri3-dev,libxcb-present-dev,libxshmfence-dev,libxxf86vm-dev,libxrandr-dev,libelf-dev,libexpat1-dev,zlib1g-dev,libzstd-dev,libass-dev,libfreetype-dev,libfontconfig-dev,libfribidi-dev,libharfbuzz-dev,libplacebo-dev,libvulkan-dev,libpulse-dev,libasound2-dev,libpipewire-0.3-dev,libsdl2-dev \
-            $UBUNTU_CODENAME $SYSROOT http://ports.ubuntu.com/ubuntu-ports
-          find $SYSROOT -lname '/*' -exec sh -c 'ln -snf "$SYSROOT$(readlink "$1")" "$1"' _ {} \;
-
-      - name: Generate Meson Cross-File
+      - name: Generate Meson cross-file
         run: |
           cat <<'EOF' > rk3588-ubuntu2610.ini
           [binaries]
@@ -70,11 +59,23 @@ jobs:
           endian = 'little'
           EOF
 
+      - name: Create ARM64 Ubuntu 26.10 Sysroot
+        run: |
+          mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc || true
+          /usr/lib/systemd/systemd-binfmt || true
+          mkdir -p $SYSROOT $DEB_OUT
+          mmdebstrap --arch=arm64 --variant=minbase \
+            --components=main,universe \
+            --include=libc6-dev,libdrm-dev,libudev-dev,libwayland-dev,libwayland-egl-backend-dev,libx11-dev,libxext-dev,libxfixes-dev,libxcb-glx0-dev,libxcb-shm0-dev,libx11-xcb-dev,libxcb-dri2-0-dev,libxcb-dri3-dev,libxcb-present-dev,libxshmfence-dev,libxxf86vm-dev,libxrandr-dev,libelf-dev,libexpat1-dev,zlib1g-dev,libzstd-dev,libass-dev,libfreetype-dev,libfontconfig-dev,libfribidi-dev,libharfbuzz-dev,libplacebo-dev,libvulkan-dev,libpulse-dev,libasound2-dev,libpipewire-0.3-dev,libsdl2-dev \
+            $UBUNTU_CODENAME $SYSROOT http://ports.ubuntu.com/ubuntu-ports
+          find $SYSROOT -lname '/*' -exec sh -c 'ln -snf "$SYSROOT$(readlink "$1")" "$1"' _ {} \;
+
       - name: Package Mali-G610 CSF Firmware (Panthor)
         run: |
           PKG_DIR=/tmp/pkg-fw
           mkdir -p $PKG_DIR/lib/firmware/arm/mali/arch10.8
-          curl -fL "https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/plain/arm/mali/arch10.8/mali_csffw.bin" \
+          curl -fL --retry 3 --connect-timeout 15 \
+            "https://gitlab.com/kernel-firmware/linux-firmware/-/raw/main/arm/mali/arch10.8/mali_csffw.bin" \
             -o $PKG_DIR/lib/firmware/arm/mali/arch10.8/mali_csffw.bin
           
           FW_VER=$(date +%Y%m%d)
