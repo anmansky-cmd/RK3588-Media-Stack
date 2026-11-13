@@ -28,15 +28,18 @@ jobs:
             build-essential gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
             pkg-config mmdebstrap qemu-user qemu-user-binfmt \
             rustc cargo llvm-dev libclang-dev libclc-22-dev \
-            libspirv-llvm-translator-22-dev \
             meson ninja-build python3-mako python3-yaml glslang-tools \
             wayland-protocols libwayland-bin flex bison git cmake nasm dpkg-dev curl ca-certificates
           DEBIAN_FRONTEND=noninteractive apt-get install -y bindgen || cargo install bindgen-cli
           if [ -x "$HOME/.cargo/bin/bindgen" ]; then
             ln -sf "$HOME/.cargo/bin/bindgen" /usr/local/bin/bindgen
           fi
+          SPIRV_TRANS_PKG=$(apt-cache search --names-only '^libspirv-llvm-translator-.*-dev$' | awk '{print $1}' | sort -V | tail -n 1)
+          if [ -n "$SPIRV_TRANS_PKG" ]; then
+            DEBIAN_FRONTEND=noninteractive apt-get install -y "$SPIRV_TRANS_PKG"
+          fi
 
-      - name: Generate Meson Cross File
+      - name: Generate Meson cross-file for RK3588
         run: |
           cat <<'EOF' > rk3588-ubuntu2610.ini
           [binaries]
@@ -89,7 +92,7 @@ jobs:
           curl -fL --retry 3 --connect-timeout 15 \
             "https://gitlab.com/kernel-firmware/linux-firmware/-/raw/main/arm/mali/arch10.8/mali_csffw.bin" \
             -o $PKG_DIR/lib/firmware/arm/mali/arch10.8/mali_csffw.bin
-          
+
           FW_VER=$(date +%Y%m%d)
           mkdir -p $PKG_DIR/DEBIAN
           cat <<EOF > $PKG_DIR/DEBIAN/control
@@ -108,7 +111,7 @@ jobs:
           MESA_HASH=$(git -C /tmp/mesa rev-parse --short HEAD)
           MESA_VER="${MESA_BASE}+git${MESA_HASH}"
           PKG_DIR=/tmp/pkg-mesa
-          
+
           meson setup /tmp/mesa/build /tmp/mesa \
             --cross-file rk3588-ubuntu2610.ini \
             --prefix=/usr \
@@ -129,7 +132,7 @@ jobs:
           meson compile -C /tmp/mesa/build
           DESTDIR=$SYSROOT meson install -C /tmp/mesa/build
           DESTDIR=$PKG_DIR meson install -C /tmp/mesa/build
-          
+
           mkdir -p $PKG_DIR/DEBIAN
           cat <<EOF > $PKG_DIR/DEBIAN/control
           Package: mesa-rk3588
@@ -151,10 +154,10 @@ jobs:
           FFMPEG_HASH=$(git rev-parse --short HEAD)
           FFMPEG_VER="${FFMPEG_BASE:-7.1}+git${FFMPEG_HASH}"
           PKG_DIR=/tmp/pkg-ffmpeg
-          
+
           export PKG_CONFIG_PATH="$SYSROOT/usr/lib/aarch64-linux-gnu/pkgconfig:$SYSROOT/usr/share/pkgconfig"
           export PKG_CONFIG_SYSROOT_DIR="$SYSROOT"
-          
+
           ./configure \
             --enable-cross-compile \
             --cross-prefix=aarch64-linux-gnu- \
@@ -181,7 +184,7 @@ jobs:
           make -j$(nproc)
           make DESTDIR=$SYSROOT install
           make DESTDIR=$PKG_DIR install
-          
+
           mkdir -p $PKG_DIR/DEBIAN
           cat <<EOF > $PKG_DIR/DEBIAN/control
           Package: ffmpeg-rk3588
@@ -202,7 +205,7 @@ jobs:
           MPV_HASH=$(git -C /tmp/mpv rev-parse --short HEAD)
           MPV_VER="${MPV_BASE:-0.40.0}+git${MPV_HASH}"
           PKG_DIR=/tmp/pkg-mpv
-          
+
           meson setup /tmp/mpv/build /tmp/mpv \
             --cross-file rk3588-ubuntu2610.ini \
             --prefix=/usr \
@@ -219,7 +222,7 @@ jobs:
             -Dgl=enabled
           meson compile -C /tmp/mpv/build
           DESTDIR=$PKG_DIR meson install -C /tmp/mpv/build
-          
+
           mkdir -p $PKG_DIR/etc/mpv
           cat <<'EOF' > $PKG_DIR/etc/mpv/mpv.conf
           hwdec=v4l2request
@@ -231,7 +234,7 @@ jobs:
           profile=fast
           vd-lavc-threads=4
           EOF
-          
+
           mkdir -p $PKG_DIR/DEBIAN
           cat <<'EOF' > $PKG_DIR/DEBIAN/conffiles
           /etc/mpv/mpv.conf
