@@ -27,7 +27,7 @@ jobs:
           DEBIAN_FRONTEND=noninteractive apt-get install -y \
             build-essential gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
             pkg-config mmdebstrap qemu-user qemu-user-binfmt \
-            rustc cargo llvm-dev libclang-dev libclc-22-dev spirv-headers \
+            rustc cargo llvm-dev libclang-dev libclc-22-dev \
             meson ninja-build python3-mako python3-yaml glslang-tools \
             wayland-protocols libwayland-bin flex bison git cmake nasm dpkg-dev curl ca-certificates
           DEBIAN_FRONTEND=noninteractive apt-get install -y bindgen || cargo install bindgen-cli
@@ -35,7 +35,7 @@ jobs:
             ln -sf "$HOME/.cargo/bin/bindgen" /usr/local/bin/bindgen
           fi
 
-      - name: Generate Meson Cross-File
+      - name: Generate Meson Cross File
         run: |
           cat <<'EOF' > rk3588-ubuntu2610.ini
           [binaries]
@@ -109,16 +109,17 @@ jobs:
           MESA_VER="${MESA_BASE}+git${MESA_HASH}"
           PKG_DIR=/tmp/pkg-mesa
 
-          # Build SPIRV-LLVM-Translator and native mesa_clc on host (x86_64) for PanVK
+          # Build SPIRV-LLVM-Translator (with matching SPIRV-Headers) and native mesa_clc on host (x86_64)
           if ! DEBIAN_FRONTEND=noninteractive apt-get install -y mesa-clc; then
             git clone --depth 1 --branch llvm_release_220 https://github.com/KhronosGroup/SPIRV-LLVM-Translator.git /tmp/spirv-llvm || \
               git clone --depth 1 https://github.com/KhronosGroup/SPIRV-LLVM-Translator.git /tmp/spirv-llvm
+            git clone --depth 1 https://github.com/KhronosGroup/SPIRV-Headers.git /tmp/spirv-headers
             cmake -S /tmp/spirv-llvm -B /tmp/spirv-llvm/build -G Ninja \
               -DCMAKE_INSTALL_PREFIX=/usr/local \
               -DCMAKE_BUILD_TYPE=Release \
               -DBUILD_SHARED_LIBS=ON \
               -DLLVM_DIR=/usr/lib/llvm-22/cmake \
-              -DLLVM_EXTERNAL_SPIRV_HEADERS_SOURCE_DIR=/usr
+              -DLLVM_EXTERNAL_SPIRV_HEADERS_SOURCE_DIR=/tmp/spirv-headers
             ninja -C /tmp/spirv-llvm/build
             ninja -C /tmp/spirv-llvm/build install
             ldconfig
@@ -176,16 +177,16 @@ jobs:
           EOF
           dpkg-deb --build --root-owner-group $PKG_DIR $DEB_OUT/mesa-rk3588_${MESA_VER}_arm64.deb
 
-      - name: Build and Package FFmpeg (V4L2 Request API)
+      - name: Build and Package FFmpeg (v4l2-request + RGA)
         run: |
-          git clone --depth 1 --branch v4l2request-v3 https://code.ffmpeg.org/Kwiboo/FFmpeg.git /tmp/ffmpeg
-          FF_VER=$(cat /tmp/ffmpeg/RELEASE | tr -d '\n' | sed 's/git/0/')
+          git clone --depth 1 --branch v4l2request-v3 https://code.ffmpeg.org/Kwiboo/FFmpeg.git /tmp/ffmpeg || \
+            git clone --depth 1 https://code.ffmpeg.org/Kwiboo/FFmpeg.git /tmp/ffmpeg
+          FF_VER=$(cat /tmp/ffmpeg/RELEASE | tr -d '\n' | sed 's/[^0-9.]//g')
           FF_HASH=$(git -C /tmp/ffmpeg rev-parse --short HEAD)
-          PKG_VER="${FF_VER}+v4l2req.${FF_HASH}"
+          FF_FULL_VER="${FF_VER:-8.1}+git${FF_HASH}"
           PKG_DIR=/tmp/pkg-ffmpeg
 
           cd /tmp/ffmpeg
-          PKG_CONFIG_PATH="" \
           PKG_CONFIG_SYSROOT_DIR=$SYSROOT \
           PKG_CONFIG_LIBDIR=$SYSROOT/usr/lib/aarch64-linux-gnu/pkgconfig:$SYSROOT/usr/share/pkgconfig \
           ./configure \
@@ -194,6 +195,7 @@ jobs:
             --enable-cross-compile \
             --cross-prefix=aarch64-linux-gnu- \
             --arch=aarch64 \
+            --cpu=cortex-a76 \
             --target-os=linux \
             --sysroot=$SYSROOT \
             --pkg-config=/usr/bin/pkg-config \
@@ -204,6 +206,7 @@ jobs:
             --enable-shared \
             --disable-static \
             --enable-libdrm \
+            --enable-v4l2-m2m \
             --enable-v4l2-request \
             --enable-libudev \
             --enable-libass \
@@ -211,10 +214,10 @@ jobs:
             --enable-libfontconfig \
             --enable-libfribidi \
             --enable-libharfbuzz \
-            --enable-vulkan \
-            --enable-libplacebo \
             --enable-libpulse \
             --enable-alsa \
+            --enable-libplacebo \
+            --enable-vulkan \
             --disable-doc \
             --disable-debug
 
@@ -225,22 +228,22 @@ jobs:
           mkdir -p $PKG_DIR/DEBIAN
           cat <<EOF > $PKG_DIR/DEBIAN/control
           Package: ffmpeg-rk3588
-          Version: ${PKG_VER}-1rk3588
+          Version: ${FF_FULL_VER}-1rk3588
           Architecture: arm64
           Maintainer: RK3588 Builder <builder@local>
-          Depends: mesa-rk3588, libdrm2, libudev1, libass9, libplacebo351 | libplacebo349 | libplacebo338, libvulkan1, libpulse0, libasound2t64
-          Provides: ffmpeg, libavcodec-extra
+          Depends: mesa-rk3588, libdrm2, libudev1, libass9, libfreetype6, libfontconfig1, libfribidi0, libharfbuzz0b, libplacebo351 | libplacebo349 | libplacebo338, libvulkan1, libpulse0, libasound2t64
+          Provides: ffmpeg, libavcodec-dev, libavformat-dev, libavutil-dev, libswscale-dev, libswresample-dev
           Replaces: ffmpeg
-          Description: FFmpeg with V4L2-Request stateless hardware decoding (H.264/HEVC/VP9/AV1) for RK3588
+          Description: FFmpeg with V4L2 Request API hardware video decoding for RK3588
           EOF
-          dpkg-deb --build --root-owner-group $PKG_DIR $DEB_OUT/ffmpeg-rk3588_${PKG_VER}_arm64.deb
+          dpkg-deb --build --root-owner-group $PKG_DIR $DEB_OUT/ffmpeg-rk3588_${FF_FULL_VER}_arm64.deb
 
-      - name: Build and Package MPV (Hardware Acceleration Enabled)
+      - name: Build and Package MPV (Zero-Copy DRM/Wayland + V4L2-Request)
         run: |
           git clone --depth 1 https://github.com/mpv-player/mpv.git /tmp/mpv
-          MPV_BASE=$(cat /tmp/mpv/VERSION | tr -d '\n' | sed 's/-UNKNOWN//')
+          MPV_VER=$(cat /tmp/mpv/VERSION | tr -d '\n' | sed 's/-UNKNOWN//')
           MPV_HASH=$(git -C /tmp/mpv rev-parse --short HEAD)
-          MPV_VER="${MPV_BASE}+git${MPV_HASH}"
+          MPV_FULL_VER="${MPV_VER}+git${MPV_HASH}"
           PKG_DIR=/tmp/pkg-mpv
 
           meson setup /tmp/mpv/build /tmp/mpv \
@@ -248,44 +251,48 @@ jobs:
             --prefix=/usr \
             --libdir=lib/aarch64-linux-gnu \
             --buildtype=release \
+            -Dgpl=true \
             -Dlibmpv=true \
             -Ddrm=enabled \
-            -Dgbm=enabled \
+            -Dwayland=enabled \
+            -Dx11=enabled \
             -Degl=enabled \
             -Degl-drm=enabled \
             -Degl-wayland=enabled \
-            -Dwayland=enabled \
-            -Dx11=enabled \
+            -Degl-x11=enabled \
             -Dvulkan=enabled \
+            -Dlibplacebo=enabled \
             -Dpipewire=enabled \
             -Dpulse=enabled \
-            -Dalsa=enabled
+            -Dalsa=enabled \
+            -Dmanpage-build=disabled
           meson compile -C /tmp/mpv/build
           DESTDIR=$PKG_DIR meson install -C /tmp/mpv/build
 
           mkdir -p $PKG_DIR/etc/mpv
-          cat <<EOF > $PKG_DIR/etc/mpv/mpv.conf
-          hwdec=drm-copy
+          cat <<'EOF' > $PKG_DIR/etc/mpv/mpv.conf
+          # RK3588 Hardware Acceleration Defaults
+          hwdec=auto-safe
           hwdec-codecs=all
           vo=gpu-next
-          gpu-api=vulkan
+          gpu-api=opengl
           gpu-context=auto
           EOF
 
           mkdir -p $PKG_DIR/DEBIAN
           cat <<EOF > $PKG_DIR/DEBIAN/control
           Package: mpv-rk3588
-          Version: ${MPV_VER}-1rk3588
+          Version: ${MPV_FULL_VER}-1rk3588
           Architecture: arm64
           Maintainer: RK3588 Builder <builder@local>
-          Depends: ffmpeg-rk3588, mesa-rk3588, libdrm2, libwayland-client0, libx11-6, libplacebo351 | libplacebo349 | libplacebo338, libvulkan1, libpipewire-0.3-0t64, libpulse0, libasound2t64
+          Depends: ffmpeg-rk3588, mesa-rk3588, libdrm2, libwayland-client0, libwayland-cursor0, libwayland-egl1, libx11-6, libplacebo351 | libplacebo349 | libplacebo338, libvulkan1, libpipewire-0.3-0t64, libpulse0, libasound2t64, libass9
           Provides: mpv, libmpv2
           Replaces: mpv
-          Description: MPV media player compiled with RK3588 V4L2-Request and Panfrost/Panthor support
+          Description: MPV media player configured for RK3588 zero-copy hardware video playback
           EOF
-          dpkg-deb --build --root-owner-group $PKG_DIR $DEB_OUT/mpv-rk3588_${MPV_VER}_arm64.deb
+          dpkg-deb --build --root-owner-group $PKG_DIR $DEB_OUT/mpv-rk3588_${MPV_FULL_VER}_arm64.deb
 
-      - name: Upload .deb packages
+      - name: Upload built .deb packages
         uses: actions/upload-artifact@v4
         with:
           name: rk3588-ubuntu2610-debs
