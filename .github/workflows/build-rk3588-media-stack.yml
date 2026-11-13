@@ -27,7 +27,7 @@ jobs:
           DEBIAN_FRONTEND=noninteractive apt-get install -y \
             build-essential gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
             pkg-config mmdebstrap qemu-user qemu-user-binfmt \
-            rustc cargo libclang-dev \
+            rustc cargo llvm-dev libclang-dev libclc-dev \
             meson ninja-build python3-mako python3-yaml glslang-tools \
             wayland-protocols libwayland-bin flex bison git cmake nasm dpkg-dev curl ca-certificates
           DEBIAN_FRONTEND=noninteractive apt-get install -y bindgen || cargo install bindgen-cli
@@ -35,7 +35,7 @@ jobs:
             ln -sf "$HOME/.cargo/bin/bindgen" /usr/local/bin/bindgen
           fi
 
-      - name: Generate Meson Cross-File
+      - name: Generate Meson cross-file for RK3588
         run: |
           cat <<'EOF' > rk3588-ubuntu2610.ini
           [binaries]
@@ -121,7 +121,9 @@ jobs:
             -Dopengl=true \
             -Degl=enabled \
             -Dgbm=enabled \
-            -Dllvm=disabled \
+            -Dllvm=auto \
+            -Dmesa-clc=enabled \
+            -Dinstall-mesa-clc=false \
             -Dglx=dri
           meson compile -C /tmp/mesa/build
           DESTDIR=$SYSROOT meson install -C /tmp/mesa/build
