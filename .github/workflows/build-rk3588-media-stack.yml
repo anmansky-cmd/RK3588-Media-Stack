@@ -25,12 +25,13 @@ jobs:
         run: |
           apt-get update
           DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+            build-essential gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+            rustc cargo rust-bindgen libclang-dev \
             pkg-config mmdebstrap qemu-user qemu-user-binfmt \
             meson ninja-build python3-mako python3-yaml glslang-tools \
             wayland-protocols libwayland-bin flex bison git cmake nasm dpkg-dev curl ca-certificates
 
-      - name: Generate Meson cross-file
+      - name: Generate Meson cross-file (rk3588-ubuntu2610.ini)
         run: |
           cat <<'EOF' > rk3588-ubuntu2610.ini
           [binaries]
@@ -40,6 +41,7 @@ jobs:
           strip = 'aarch64-linux-gnu-strip'
           pkg-config = '/usr/bin/pkg-config'
           wayland-scanner = '/usr/bin/wayland-scanner'
+          rust = ['rustc', '--target=aarch64-unknown-linux-gnu', '-C', 'linker=aarch64-linux-gnu-gcc', '-C', 'link-arg=--sysroot=/opt/sysroot', '-L', '/opt/sysroot/usr/lib/rustlib/aarch64-unknown-linux-gnu/lib']
 
           [built-in options]
           c_args = ['-mcpu=cortex-a76.cortex-a55', '-O2', '--sysroot=/opt/sysroot']
@@ -66,7 +68,7 @@ jobs:
           mkdir -p $SYSROOT $DEB_OUT
           mmdebstrap --arch=arm64 --variant=minbase \
             --components=main,universe \
-            --include=libc6-dev,libdrm-dev,libudev-dev,libwayland-dev,libwayland-egl-backend-dev,libx11-dev,libxext-dev,libxfixes-dev,libxcb-glx0-dev,libxcb-shm0-dev,libx11-xcb-dev,libxcb-dri2-0-dev,libxcb-dri3-dev,libxcb-present-dev,libxshmfence-dev,libxxf86vm-dev,libxrandr-dev,libelf-dev,libexpat1-dev,zlib1g-dev,libzstd-dev,libass-dev,libfreetype-dev,libfontconfig-dev,libfribidi-dev,libharfbuzz-dev,libplacebo-dev,libvulkan-dev,libpulse-dev,libasound2-dev,libpipewire-0.3-dev,libsdl2-dev \
+            --include=libc6-dev,libstd-rust-dev,libdrm-dev,libudev-dev,libwayland-dev,libwayland-egl-backend-dev,libx11-dev,libxext-dev,libxfixes-dev,libxcb-glx0-dev,libxcb-shm0-dev,libx11-xcb-dev,libxcb-dri2-0-dev,libxcb-dri3-dev,libxcb-present-dev,libxshmfence-dev,libxxf86vm-dev,libxrandr-dev,libelf-dev,libexpat1-dev,zlib1g-dev,libzstd-dev,libass-dev,libfreetype-dev,libfontconfig-dev,libfribidi-dev,libharfbuzz-dev,libplacebo-dev,libvulkan-dev,libpulse-dev,libasound2-dev,libpipewire-0.3-dev,libsdl2-dev \
             $UBUNTU_CODENAME $SYSROOT http://ports.ubuntu.com/ubuntu-ports
           find $SYSROOT -lname '/*' -exec sh -c 'ln -snf "$SYSROOT$(readlink "$1")" "$1"' _ {} \;
 
