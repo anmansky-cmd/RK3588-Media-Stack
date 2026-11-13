@@ -39,7 +39,7 @@ jobs:
             DEBIAN_FRONTEND=noninteractive apt-get install -y "$SPIRV_TRANS_PKG"
           fi
 
-      - name: Generate Meson cross-file for RK3588
+      - name: Generate Meson Cross-File
         run: |
           cat <<'EOF' > rk3588-ubuntu2610.ini
           [binaries]
@@ -49,6 +49,7 @@ jobs:
           strip = 'aarch64-linux-gnu-strip'
           pkg-config = '/usr/bin/pkg-config'
           wayland-scanner = '/usr/bin/wayland-scanner'
+          mesa_clc = '/usr/local/bin/mesa_clc'
           rust = ['rustc', '--target=aarch64-unknown-linux-gnu', '-C', 'link-arg=--sysroot=/opt/sysroot']
           rust_ld = 'aarch64-linux-gnu-gcc'
 
@@ -112,6 +113,27 @@ jobs:
           MESA_VER="${MESA_BASE}+git${MESA_HASH}"
           PKG_DIR=/tmp/pkg-mesa
 
+          # Build native mesa_clc on host (x86_64) for PanVK shader precompilation
+          if ! DEBIAN_FRONTEND=noninteractive apt-get install -y mesa-clc; then
+            meson setup /tmp/mesa/build-host /tmp/mesa \
+              --prefix=/usr/local \
+              --buildtype=release \
+              -Dmesa-clc=enabled \
+              -Dinstall-mesa-clc=true \
+              -Dgallium-drivers= \
+              -Dvulkan-drivers= \
+              -Dplatforms= \
+              -Dglx=disabled \
+              -Degl=disabled \
+              -Dgbm=disabled \
+              -Dgles1=disabled \
+              -Dgles2=disabled \
+              -Dopengl=false
+            meson compile -C /tmp/mesa/build-host
+            meson install -C /tmp/mesa/build-host
+          fi
+          ln -snf "$(command -v mesa_clc)" /usr/local/bin/mesa_clc || true
+
           meson setup /tmp/mesa/build /tmp/mesa \
             --cross-file rk3588-ubuntu2610.ini \
             --prefix=/usr \
@@ -125,9 +147,8 @@ jobs:
             -Dopengl=true \
             -Degl=enabled \
             -Dgbm=enabled \
-            -Dllvm=auto \
-            -Dmesa-clc=enabled \
-            -Dinstall-mesa-clc=false \
+            -Dllvm=disabled \
+            -Dmesa-clc=system \
             -Dglx=dri
           meson compile -C /tmp/mesa/build
           DESTDIR=$SYSROOT meson install -C /tmp/mesa/build
