@@ -38,7 +38,7 @@ jobs:
             ln -sf "$HOME/.cargo/bin/bindgen" /usr/local/bin/bindgen
           fi
 
-      - name: Generate Meson Cross-File
+      - name: Generate Meson cross-file for RK3588
         run: |
           cat <<'EOF' > rk3588-ubuntu2610.ini
           [binaries]
@@ -244,9 +244,9 @@ jobs:
 
       - name: Build and Package MPV
         run: |
-          git clone --depth 1 https://github.com/mpv-player/mpv.git /tmp/mpv
+          git clone --depth 1 --branch v0.41.0 https://github.com/mpv-player/mpv.git /tmp/mpv
           MPV_BASE=$(grep -m1 "version:" /tmp/mpv/meson.build | sed -E "s/.*version:[[:space:]]*'([0-9.]+).*/\1/" || true)
-          [ -z "$MPV_BASE" ] && MPV_BASE="0.40.0"
+          [ -z "$MPV_BASE" ] && MPV_BASE="0.41.0"
           MPV_HASH=$(git -C /tmp/mpv rev-parse --short HEAD)
           MPV_VER="${MPV_BASE}+git${MPV_HASH}"
           PKG_DIR=/tmp/pkg-mpv
@@ -283,15 +283,16 @@ jobs:
           Version: ${MPV_VER}-1rk3588
           Architecture: arm64
           Maintainer: RK3588 Builder <builder@local>
-          Depends: ffmpeg-rk3588, mesa-rk3588, libplacebo349 | libplacebo338 | libplacebo360, libdrm2, libwayland-client0, libx11-6, libpipewire-0.3-0t64, libpulse0, libasound2t64, libvulkan1
+          Depends: ffmpeg-rk3588, mesa-rk3588, libplacebo360 | libplacebo349 | libplacebo338, libdrm2, libwayland-client0, libx11-6, libpipewire-0.3-0t64, libpulse0, libasound2t64, libvulkan1
           Provides: mpv, libmpv2
           Replaces: mpv
           Description: MPV media player with RK3588 hardware video decoding and Vulkan/DRM support
           EOF
           dpkg-deb --build --root-owner-group $PKG_DIR $DEB_OUT/mpv-rk3588_${MPV_VER}_arm64.deb
 
-      - name: Upload built .deb packages
+      - name: Upload .deb packages as workflow artifacts
         uses: actions/upload-artifact@v4
         with:
           name: rk3588-ubuntu2610-debs
           path: /opt/debs/*.deb
+          if-no-files-found: error
