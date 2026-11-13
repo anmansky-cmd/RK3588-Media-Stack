@@ -33,11 +33,13 @@ jobs:
 
       - name: Create ARM64 Ubuntu 26.10 Sysroot
         run: |
+          mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc || true
+          /usr/lib/systemd/systemd-binfmt || true
           mkdir -p $SYSROOT $DEB_OUT
           mmdebstrap --arch=arm64 --variant=minbase \
             --components=main,universe \
             --include=libc6-dev,libdrm-dev,libudev-dev,libwayland-dev,libwayland-egl-backend-dev,libx11-dev,libxext-dev,libxfixes-dev,libxcb-glx0-dev,libxcb-shm0-dev,libx11-xcb-dev,libxcb-dri2-0-dev,libxcb-dri3-dev,libxcb-present-dev,libxshmfence-dev,libxxf86vm-dev,libxrandr-dev,libelf-dev,libexpat1-dev,zlib1g-dev,libzstd-dev,libass-dev,libfreetype-dev,libfontconfig-dev,libfribidi-dev,libharfbuzz-dev,libplacebo-dev,libvulkan-dev,libpulse-dev,libasound2-dev,libpipewire-0.3-dev,libsdl2-dev \
-            $UBUNTU_CODENAME $SYSROOT http://ports.ubuntu.com/ubuntu-ports
+            $UBUNTU_CODENAME $SYSROOT http://ubuntu.com
           find $SYSROOT -lname '/*' -exec sh -c 'ln -snf "$SYSROOT$(readlink "$1")" "$1"' _ {} \;
 
       - name: Generate Meson Cross-File
