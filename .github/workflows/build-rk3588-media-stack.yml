@@ -3,12 +3,7 @@ name: Build Full RK3588 Media Stack (.deb) for Ubuntu 26.10
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
-
-env:
-  SYSROOT: /opt/sysroot
-  DEB_OUT: /opt/debs
-  UBUNTU_CODENAME: stonking
+    branches: [ main, master ]
 
 jobs:
   build:
@@ -16,6 +11,11 @@ jobs:
     container:
       image: ubuntu:26.10
       options: --privileged
+
+    env:
+      SYSROOT: /opt/sysroot
+      DEB_OUT: /opt/debs
+      UBUNTU_CODENAME: stonking
 
     steps:
       - name: Checkout repository
@@ -108,7 +108,7 @@ jobs:
       - name: Build and Package Mesa (Panfrost / Panthor)
         run: |
           git clone --depth 1 https://gitlab.freedesktop.org/mesa/mesa.git /tmp/mesa
-          MESA_BASE=$(cat /tmp/mesa/VERSION | tr -d '\n' | sed 's/-devel//')
+          MESA_BASE=$(cat /tmp/mesa/VERSION | tr -d '[:space:]' | sed 's/-devel//')
           MESA_HASH=$(git -C /tmp/mesa rev-parse --short HEAD)
           MESA_VER="${MESA_BASE}+git${MESA_HASH}"
           PKG_DIR=/tmp/pkg-mesa
@@ -181,13 +181,13 @@ jobs:
           Replaces: libgl1-mesa-dri, libegl-mesa0, libgbm1, mesa-vulkan-drivers
           Description: Mesa 3D graphics library with Panfrost/Panthor support for RK3588
           EOF
-          dpkg-deb --build --root-owner-group $PKG_DIR $DEB_OUT/mesa-rk3588_${MESA_VER}_arm64.deb
+          dpkg-deb --build --root-owner-group "$PKG_DIR" "$DEB_OUT/mesa-rk3588_${MESA_VER}_arm64.deb"
 
-      - name: Build and Package FFmpeg (V4L2 Request API)
+      - name: Build and Package FFmpeg (V4L2-Request)
         run: |
           git clone --depth 1 --branch v4l2request-v3 https://code.ffmpeg.org/Kwiboo/FFmpeg.git /tmp/ffmpeg || \
             git clone --depth 1 https://code.ffmpeg.org/Kwiboo/FFmpeg.git /tmp/ffmpeg
-          FF_BASE=$(cat /tmp/ffmpeg/RELEASE 2>/dev/null | tr -d '\n' | sed 's/[^0-9.].*//;s/\.*$//')
+          FF_BASE=$(cat /tmp/ffmpeg/RELEASE 2>/dev/null | tr -d '[:space:]' | sed 's/[^0-9.].*//;s/\.*$//')
           [ -z "$FF_BASE" ] && FF_BASE="8.0"
           FF_HASH=$(git -C /tmp/ffmpeg rev-parse --short HEAD)
           FF_VER="${FF_BASE}+v4l2req.${FF_HASH}"
@@ -240,14 +240,13 @@ jobs:
           Replaces: ffmpeg
           Description: FFmpeg with V4L2-Request stateless hardware video decoding for RK3588
           EOF
-          dpkg-deb --build --root-owner-group $PKG_DIR $DEB_OUT/ffmpeg-rk3588_${FF_VER}_arm64.deb
+          dpkg-deb --build --root-owner-group "$PKG_DIR" "$DEB_OUT/ffmpeg-rk3588_${FF_VER}_arm64.deb"
 
       - name: Build and Package MPV
         run: |
           git clone --depth 1 --branch v0.41.0 https://github.com/mpv-player/mpv.git /tmp/mpv
-          MPV_BASE=$(grep -m1 "version:" /tmp/mpv/meson.build | sed -E "s/.*version:[[:space:]]*'([0-9.]+).*/\1/" || true)
-          [ -z "$MPV_BASE" ] && MPV_BASE="0.41.0"
-          MPV_HASH=$(git -C /tmp/mpv rev-parse --short HEAD)
+          MPV_BASE="0.41.0"
+          MPV_HASH=$(git -C /tmp/mpv rev-parse --short HEAD | tr -d '[:space:]')
           MPV_VER="${MPV_BASE}+git${MPV_HASH}"
           PKG_DIR=/tmp/pkg-mpv
 
@@ -288,7 +287,7 @@ jobs:
           Replaces: mpv
           Description: MPV media player with RK3588 hardware video decoding and Vulkan/DRM support
           EOF
-          dpkg-deb --build --root-owner-group $PKG_DIR $DEB_OUT/mpv-rk3588_${MPV_VER}_arm64.deb
+          dpkg-deb --build --root-owner-group "$PKG_DIR" "$DEB_OUT/mpv-rk3588_${MPV_VER}_arm64.deb"
 
       - name: Upload built .deb packages
         uses: actions/upload-artifact@v4
