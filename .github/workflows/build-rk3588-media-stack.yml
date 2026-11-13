@@ -38,7 +38,7 @@ jobs:
             ln -sf "$HOME/.cargo/bin/bindgen" /usr/local/bin/bindgen
           fi
 
-      - name: Generate Meson cross-file for RK3588
+      - name: Generate Meson cross-file for RK3588 (Ubuntu 26.10)
         run: |
           cat <<'EOF' > rk3588-ubuntu2610.ini
           [binaries]
@@ -148,36 +148,7 @@ jobs:
           install -m 755 /tmp/mesa/build-host/src/compiler/spirv/vtn_bindgen2 /usr/local/bin/vtn_bindgen2
           install -m 755 /tmp/mesa/build-host/src/panfrost/clc/panfrost_compile /usr/local/bin/panfrost_compile
 
-          # 3. Patch src/panfrost/clc/meson.build so cross-build uses host panfrost_compile
-          python3 -c "
-          p = '/tmp/mesa/src/panfrost/clc/meson.build'
-          with open(p, 'r') as f:
-              s = f.read()
-          patch = '''if meson.is_cross_build()
-            panfrost_compile = find_program('panfrost_compile', native: true)
-          else
-            panfrost_compile = executable(
-          '''
-          s = s.replace('panfrost_compile = executable(', patch, 1)
-          idx = s.find('panfrost_compile = executable(')
-          if idx != -1:
-              depth = 0
-              end_idx = -1
-              for i in range(idx, len(s)):
-                  if s[i] == '(':
-                      depth += 1
-                  elif s[i] == ')':
-                      depth -= 1
-                      if depth == 0:
-                          end_idx = i + 1
-                          break
-              if end_idx != -1:
-                  s = s[:end_idx] + '\nendif' + s[end_idx:]
-          with open(p, 'w') as f:
-              f.write(s)
-          "
-
-          # 4. Cross-compile Mesa for RK3588 (ARM64) without target LLVM dependency
+          # 3. Cross-compile Mesa for RK3588 (ARM64) using native precomp-compiler
           meson setup /tmp/mesa/build /tmp/mesa \
             --cross-file rk3588-ubuntu2610.ini \
             --prefix=/usr \
@@ -193,6 +164,7 @@ jobs:
             -Dgbm=enabled \
             -Dllvm=disabled \
             -Dmesa-clc=system \
+            -Dprecomp-compiler=system \
             -Dglx=dri
           meson compile -C /tmp/mesa/build
           DESTDIR=$SYSROOT meson install -C /tmp/mesa/build
@@ -213,10 +185,12 @@ jobs:
 
       - name: Build and Package FFmpeg (V4L2 Request API)
         run: |
-          git clone --depth 1 --branch v4l2request-v3 https://code.ffmpeg.org/Kwiboo/FFmpeg.git /tmp/ffmpeg
-          FF_VER=$(cat /tmp/ffmpeg/RELEASE | tr -d '\n' | sed 's/git//')
+          git clone --depth 1 --branch v4l2request-v3 https://code.ffmpeg.org/Kwiboo/FFmpeg.git /tmp/ffmpeg || \
+            git clone --depth 1 https://code.ffmpeg.org/Kwiboo/FFmpeg.git /tmp/ffmpeg
+          FF_BASE=$(cat /tmp/ffmpeg/RELEASE | tr -d '\n' | sed 's/[^0-9.].*//')
+          [ -z "$FF_BASE" ] && FF_BASE="7.1"
           FF_HASH=$(git -C /tmp/ffmpeg rev-parse --short HEAD)
-          PKG_VER="${FF_VER}git${FF_HASH}"
+          FF_VER="${FF_BASE}+v4l2req.${FF_HASH}"
           PKG_DIR=/tmp/pkg-ffmpeg
 
           cd /tmp/ffmpeg
@@ -227,17 +201,29 @@ jobs:
             --libdir=/usr/lib/aarch64-linux-gnu \
             --enable-cross-compile \
             --cross-prefix=aarch64-linux-gnu- \
-            --target-os=linux \
             --arch=aarch64 \
             --cpu=cortex-a76 \
+            --target-os=linux \
             --sysroot=$SYSROOT \
-            --extra-cflags="-mcpu=cortex-a76.cortex-a55 -O2" \
-            --extra-ldflags="-Wl,-rpath-link,$SYSROOT/usr/lib/aarch64-linux-gnu" \
-            --enable-gpl --enable-version3 --enable-nonfree \
-            --enable-shared --disable-static --disable-debug --disable-doc \
-            --enable-v4l2-m2m --enable-v4l2-request --enable-libdrm --enable-libudev \
-            --enable-libass --enable-libfreetype --enable-libfontconfig --enable-libfribidi --enable-libharfbuzz \
-            --enable-libpulse --enable-alsa --enable-vulkan
+            --pkg-config=/usr/bin/pkg-config \
+            --extra-cflags="-O2 -mcpu=cortex-a76.cortex-a55" \
+            --enable-gpl \
+            --enable-version3 \
+            --enable-shared \
+            --disable-static \
+            --disable-doc \
+            --enable-libdrm \
+            --enable-v4l2-m2m \
+            --enable-v4l2-request \
+            --enable-libudev \
+            --enable-libass \
+            --enable-libfreetype \
+            --enable-libfontconfig \
+            --enable-libfribidi \
+            --enable-libharfbuzz \
+            --enable-libpulse \
+            --enable-alsa \
+            --enable-vulkan
 
           make -j$(nproc)
           make DESTDIR=$SYSROOT install
@@ -246,22 +232,22 @@ jobs:
           mkdir -p $PKG_DIR/DEBIAN
           cat <<EOF > $PKG_DIR/DEBIAN/control
           Package: ffmpeg-rk3588
-          Version: ${PKG_VER}-1rk3588
+          Version: ${FF_VER}-1rk3588
           Architecture: arm64
           Maintainer: RK3588 Builder <builder@local>
-          Depends: libdrm2, libudev1, libass9, libfreetype6, libfontconfig1, libfribidi0, libharfbuzz0b, libpulse0, libasound2t64, libvulkan1
+          Depends: mesa-rk3588, libdrm2, libudev1, libass9, libfreetype6, libfontconfig1, libfribidi0, libharfbuzz0b, libpulse0, libasound2t64, libvulkan1
           Provides: ffmpeg, libavcodec-dev, libavformat-dev, libavutil-dev, libswscale-dev, libswresample-dev
           Replaces: ffmpeg
-          Description: FFmpeg with Rockchip RK3588 V4L2 Request API hardware video decoding
+          Description: FFmpeg with V4L2-Request stateless hardware video decoding for RK3588
           EOF
-          dpkg-deb --build --root-owner-group $PKG_DIR $DEB_OUT/ffmpeg-rk3588_${PKG_VER}_arm64.deb
+          dpkg-deb --build --root-owner-group $PKG_DIR $DEB_OUT/ffmpeg-rk3588_${FF_VER}_arm64.deb
 
       - name: Build and Package MPV
         run: |
           git clone --depth 1 https://github.com/mpv-player/mpv.git /tmp/mpv
-          MPV_VER=$(cat /tmp/mpv/VERSION | tr -d '\n' | sed 's/-UNKNOWN//')
+          MPV_BASE=$(cat /tmp/mpv/VERSION | tr -d '\n' | sed 's/-UNKNOWN//;s/-dirty//')
           MPV_HASH=$(git -C /tmp/mpv rev-parse --short HEAD)
-          PKG_VER="${MPV_VER}+git${MPV_HASH}"
+          MPV_VER="${MPV_BASE}+git${MPV_HASH}"
           PKG_DIR=/tmp/pkg-mpv
 
           meson setup /tmp/mpv/build /tmp/mpv \
@@ -273,10 +259,7 @@ jobs:
             -Dlibmpv=true \
             -Ddrm=enabled \
             -Dgbm=enabled \
-            -Degl=enabled \
             -Degl-drm=enabled \
-            -Degl-wayland=enabled \
-            -Degl-x11=enabled \
             -Dwayland=enabled \
             -Dx11=enabled \
             -Dvulkan=enabled \
@@ -289,8 +272,7 @@ jobs:
 
           mkdir -p $PKG_DIR/etc/mpv
           cat <<EOF > $PKG_DIR/etc/mpv/mpv.conf
-          hwdec=drm-copy
-          hwdec-codecs=all
+          hwdec=auto-copy
           vo=gpu-next
           gpu-api=vulkan
           EOF
@@ -298,17 +280,17 @@ jobs:
           mkdir -p $PKG_DIR/DEBIAN
           cat <<EOF > $PKG_DIR/DEBIAN/control
           Package: mpv-rk3588
-          Version: ${PKG_VER}-1rk3588
+          Version: ${MPV_VER}-1rk3588
           Architecture: arm64
           Maintainer: RK3588 Builder <builder@local>
-          Depends: ffmpeg-rk3588, mesa-rk3588, libdrm2, libplacebo349 | libplacebo338 | libplacebo351, libwayland-client0, libx11-6, libass9, libpipewire-0.3-0t64, libpulse0, libasound2t64
+          Depends: ffmpeg-rk3588, mesa-rk3588, libplacebo349 | libplacebo338 | libplacebo360, libdrm2, libwayland-client0, libx11-6, libpipewire-0.3-0t64, libpulse0, libasound2t64, libvulkan1
           Provides: mpv, libmpv2
           Replaces: mpv
-          Description: MPV media player built against RK3588 V4L2-Request FFmpeg and Panfrost Mesa
+          Description: MPV media player with RK3588 hardware video decoding and Vulkan/DRM support
           EOF
-          dpkg-deb --build --root-owner-group $PKG_DIR $DEB_OUT/mpv-rk3588_${PKG_VER}_arm64.deb
+          dpkg-deb --build --root-owner-group $PKG_DIR $DEB_OUT/mpv-rk3588_${MPV_VER}_arm64.deb
 
-      - name: Upload compiled .deb packages
+      - name: Upload built .deb packages
         uses: actions/upload-artifact@v4
         with:
           name: rk3588-ubuntu2610-debs
