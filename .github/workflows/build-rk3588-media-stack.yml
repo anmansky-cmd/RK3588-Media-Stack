@@ -26,12 +26,16 @@ jobs:
           apt-get update
           DEBIAN_FRONTEND=noninteractive apt-get install -y \
             build-essential gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
-            rustc cargo rust-bindgen libclang-dev \
             pkg-config mmdebstrap qemu-user qemu-user-binfmt \
+            rustc cargo libclang-dev \
             meson ninja-build python3-mako python3-yaml glslang-tools \
             wayland-protocols libwayland-bin flex bison git cmake nasm dpkg-dev curl ca-certificates
+          DEBIAN_FRONTEND=noninteractive apt-get install -y bindgen || cargo install bindgen-cli
+          if [ -x "$HOME/.cargo/bin/bindgen" ]; then
+            ln -sf "$HOME/.cargo/bin/bindgen" /usr/local/bin/bindgen
+          fi
 
-      - name: Generate Meson cross-file (rk3588-ubuntu2610.ini)
+      - name: Generate Meson cross-file for RK3588 (with Rust)
         run: |
           cat <<'EOF' > rk3588-ubuntu2610.ini
           [binaries]
