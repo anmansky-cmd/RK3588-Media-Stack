@@ -28,8 +28,7 @@ jobs:
             gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
             pkg-config mmdebstrap qemu-user qemu-user-binfmt \
             meson ninja-build python3-mako python3-yaml glslang-tools \
-            wayland-protocols libwayland-bin flex bison git cmake nasm \
-            dpkg-dev curl ca-certificates
+            wayland-protocols libwayland-bin flex bison git cmake nasm dpkg-dev curl ca-certificates
 
       - name: Create ARM64 Ubuntu 26.10 Sysroot
         run: |
@@ -39,12 +38,12 @@ jobs:
           mmdebstrap --arch=arm64 --variant=minbase \
             --components=main,universe \
             --include=libc6-dev,libdrm-dev,libudev-dev,libwayland-dev,libwayland-egl-backend-dev,libx11-dev,libxext-dev,libxfixes-dev,libxcb-glx0-dev,libxcb-shm0-dev,libx11-xcb-dev,libxcb-dri2-0-dev,libxcb-dri3-dev,libxcb-present-dev,libxshmfence-dev,libxxf86vm-dev,libxrandr-dev,libelf-dev,libexpat1-dev,zlib1g-dev,libzstd-dev,libass-dev,libfreetype-dev,libfontconfig-dev,libfribidi-dev,libharfbuzz-dev,libplacebo-dev,libvulkan-dev,libpulse-dev,libasound2-dev,libpipewire-0.3-dev,libsdl2-dev \
-            $UBUNTU_CODENAME $SYSROOT http://ubuntu.com
+            $UBUNTU_CODENAME $SYSROOT http://ports.ubuntu.com/ubuntu-ports
           find $SYSROOT -lname '/*' -exec sh -c 'ln -snf "$SYSROOT$(readlink "$1")" "$1"' _ {} \;
 
-      - name: Generate Meson Cross-File
+      - name: Generate Meson Cross File
         run: |
-          cat <<'EOF' > /tmp/rk3588-ubuntu2610.ini
+          cat <<'EOF' > rk3588-ubuntu2610.ini
           [binaries]
           c = 'aarch64-linux-gnu-gcc'
           cpp = 'aarch64-linux-gnu-g++'
@@ -98,7 +97,7 @@ jobs:
           PKG_DIR=/tmp/pkg-mesa
           
           meson setup /tmp/mesa/build /tmp/mesa \
-            --cross-file /tmp/rk3588-ubuntu2610.ini \
+            --cross-file rk3588-ubuntu2610.ini \
             --prefix=/usr \
             --libdir=lib/aarch64-linux-gnu \
             --buildtype=release \
@@ -190,7 +189,7 @@ jobs:
           PKG_DIR=/tmp/pkg-mpv
           
           meson setup /tmp/mpv/build /tmp/mpv \
-            --cross-file /tmp/rk3588-ubuntu2610.ini \
+            --cross-file rk3588-ubuntu2610.ini \
             --prefix=/usr \
             --libdir=lib/aarch64-linux-gnu \
             --buildtype=release \
