@@ -38,7 +38,7 @@ jobs:
             ln -sf "$HOME/.cargo/bin/bindgen" /usr/local/bin/bindgen
           fi
 
-      - name: Generate Meson cross-file for RK3588 (Ubuntu 26.10)
+      - name: Generate Meson Cross-File
         run: |
           cat <<'EOF' > rk3588-ubuntu2610.ini
           [binaries]
@@ -187,8 +187,8 @@ jobs:
         run: |
           git clone --depth 1 --branch v4l2request-v3 https://code.ffmpeg.org/Kwiboo/FFmpeg.git /tmp/ffmpeg || \
             git clone --depth 1 https://code.ffmpeg.org/Kwiboo/FFmpeg.git /tmp/ffmpeg
-          FF_BASE=$(cat /tmp/ffmpeg/RELEASE | tr -d '\n' | sed 's/[^0-9.].*//')
-          [ -z "$FF_BASE" ] && FF_BASE="7.1"
+          FF_BASE=$(cat /tmp/ffmpeg/RELEASE 2>/dev/null | tr -d '\n' | sed 's/[^0-9.].*//;s/\.*$//')
+          [ -z "$FF_BASE" ] && FF_BASE="8.0"
           FF_HASH=$(git -C /tmp/ffmpeg rev-parse --short HEAD)
           FF_VER="${FF_BASE}+v4l2req.${FF_HASH}"
           PKG_DIR=/tmp/pkg-ffmpeg
@@ -245,7 +245,8 @@ jobs:
       - name: Build and Package MPV
         run: |
           git clone --depth 1 https://github.com/mpv-player/mpv.git /tmp/mpv
-          MPV_BASE=$(cat /tmp/mpv/VERSION | tr -d '\n' | sed 's/-UNKNOWN//;s/-dirty//')
+          MPV_BASE=$(grep -m1 "version:" /tmp/mpv/meson.build | sed -E "s/.*version:[[:space:]]*'([0-9.]+).*/\1/" || true)
+          [ -z "$MPV_BASE" ] && MPV_BASE="0.40.0"
           MPV_HASH=$(git -C /tmp/mpv rev-parse --short HEAD)
           MPV_VER="${MPV_BASE}+git${MPV_HASH}"
           PKG_DIR=/tmp/pkg-mpv
@@ -263,7 +264,6 @@ jobs:
             -Dwayland=enabled \
             -Dx11=enabled \
             -Dvulkan=enabled \
-            -Dlibplacebo=enabled \
             -Dpipewire=enabled \
             -Dpulse=enabled \
             -Dalsa=enabled
