@@ -41,7 +41,7 @@ jobs:
             $UBUNTU_CODENAME $SYSROOT http://ports.ubuntu.com/ubuntu-ports
           find $SYSROOT -lname '/*' -exec sh -c 'ln -snf "$SYSROOT$(readlink "$1")" "$1"' _ {} \;
 
-      - name: Generate Meson Cross File
+      - name: Generate Meson Cross-File
         run: |
           cat <<'EOF' > rk3588-ubuntu2610.ini
           [binaries]
@@ -102,7 +102,7 @@ jobs:
             --libdir=lib/aarch64-linux-gnu \
             --buildtype=release \
             -Dplatforms=x11,wayland \
-            -Dgallium-drivers=panfrost,swrast \
+            -Dgallium-drivers=panfrost,softpipe \
             -Dvulkan-drivers=panfrost \
             -Dgles1=disabled \
             -Dgles2=enabled \
