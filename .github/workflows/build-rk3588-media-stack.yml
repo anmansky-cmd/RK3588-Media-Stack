@@ -1,4 +1,4 @@
-name: Build Full RK3588 Media Stack (.deb) for Ubuntu 26.10
+name: Build RK3588 Media Stack (Mesa in /opt for GNOME preservation)
 
 on:
   workflow_dispatch:
@@ -12,14 +12,12 @@ env:
   SYSROOT: /opt/sysroot
   DEB_OUT: /opt/debs
   UBUNTU_CODENAME: stonking
+  MESA_OPT_PREFIX: /opt/mesa-rk3588
 
 jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      # ВАЖНО: зафиксируй образ по digest для воспроизводимости.
-      # Получить: docker pull ubuntu:26.10 && docker inspect --format='{{index .RepoDigests 0}}' ubuntu:26.10
-      # Затем заменить строку ниже на: ubuntu@sha256:<digest>
       image: ubuntu:26.10
       options: --privileged
 
@@ -111,7 +109,6 @@ jobs:
           curl -fL --retry 3 --connect-timeout 15 \
             "https://gitlab.com/kernel-firmware/linux-firmware/-/raw/main/arm/mali/arch10.8/mali_csffw.bin" \
             -o $PKG_DIR/lib/firmware/arm/mali/arch10.8/mali_csffw.bin
-
           FW_VER=$(date +%Y%m%d)
           mkdir -p $PKG_DIR/DEBIAN
           cat <<EOF > $PKG_DIR/DEBIAN/control
@@ -123,17 +120,16 @@ jobs:
           EOF
           dpkg-deb --build --root-owner-group "$PKG_DIR" "$DEB_OUT/firmware-mali-rk3588_${FW_VER}_arm64.deb"
 
-      - name: Build and Package Mesa (Panfrost / Panthor / PanVK)
+      - name: Build Mesa into /opt (no system conflicts)
         run: |
           rm -rf /tmp/mesa
           git clone --depth 1 https://gitlab.freedesktop.org/mesa/mesa.git /tmp/mesa
           MESA_BASE=$(cat /tmp/mesa/VERSION | tr -d '[:space:]' | sed 's/-devel//')
-          MESA_UPSTREAM="${MESA_BASE:-27.0.0}"
           MESA_HASH=$(git -C /tmp/mesa rev-parse --short HEAD)
           MESA_VER="${MESA_BASE}+git${MESA_HASH}"
-          PKG_DIR=/tmp/pkg-mesa
+          PKG_DIR=/tmp/pkg-mesa-opt
 
-          # 1. SPIRV-LLVM-Translator на хосте (x86_64) — только если нет в кэше
+          # SPIRV-LLVM-Translator (из кэша или сборка)
           if [ ! -f /usr/local/lib/libLLVMSPIRVLib.so ] || [ ! -x /usr/local/bin/llvm-spirv ]; then
             rm -rf /tmp/spirv-llvm /tmp/spirv-headers
             git clone --depth 1 --branch llvm_release_220 https://github.com/KhronosGroup/SPIRV-LLVM-Translator.git /tmp/spirv-llvm || \
@@ -149,11 +145,11 @@ jobs:
             ninja -C /tmp/spirv-llvm/build install
             ldconfig
           else
-            echo "SPIRV-LLVM-Translator восстановлен из кэша, пропускаем сборку"
+            echo "SPIRV-LLVM-Translator из кэша"
             ldconfig
           fi
 
-          # 2. Native precompilers на хосте (x86_64)
+          # Native precompilers
           rm -rf /tmp/mesa/build-host
           PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkgconfig \
           meson setup /tmp/mesa/build-host /tmp/mesa \
@@ -175,12 +171,12 @@ jobs:
           install -m 755 /tmp/mesa/build-host/src/compiler/spirv/vtn_bindgen2 /usr/local/bin/vtn_bindgen2
           install -m 755 /tmp/mesa/build-host/src/panfrost/clc/panfrost_compile /usr/local/bin/panfrost_compile
 
-          # 3. Кросс-сборка Mesa для RK3588 (ARM64)
+          # Кросс-сборка в /opt/mesa-rk3588
           rm -rf /tmp/mesa/build
           meson setup /tmp/mesa/build /tmp/mesa \
             --cross-file rk3588-ubuntu2610.ini \
-            --prefix=/usr \
-            --libdir=lib/aarch64-linux-gnu \
+            --prefix=$MESA_OPT_PREFIX \
+            --libdir=lib \
             --buildtype=release \
             -Dplatforms=x11,wayland \
             -Dgallium-drivers=panfrost,softpipe \
@@ -195,38 +191,21 @@ jobs:
             -Dprecomp-compiler=system \
             -Dglx=dri
           meson compile -C /tmp/mesa/build
-          DESTDIR=$SYSROOT meson install -C /tmp/mesa/build
           DESTDIR=$PKG_DIR meson install -C /tmp/mesa/build
 
+          # Control-файл БЕЗ Breaks/Replaces/Provides — никаких конфликтов с системой
           mkdir -p $PKG_DIR/DEBIAN
-          # ВАЖНО: в Ubuntu 26.10 (stonking) файлы, которые ставит наша Mesa,
-          # принадлежат нескольким системным пакетам:
-          #   libgbm1          - /usr/lib/aarch64-linux-gnu/gbm/dri_gbm.so, libgbm.so.1.0.0
-          #   libgl1-mesa-dri  - /usr/lib/aarch64-linux-gnu/dri/libdril_dri.so, 00-mesa-defaults.conf
-          #   mesa-libgallium  - /usr/share/drirc.d/00-panfrost-defaults.conf
-          #   mesa-vulkan-drivers - libvulkan_panfrost.so, 00-panvk-defaults.conf
-          #   libegl1          - /usr/lib/aarch64-linux-gnu/libEGL.so.1
-          #   libgl1           - /usr/lib/aarch64-linux-gnu/libGL.so.1
-          #   libglesv2-2      - /usr/lib/aarch64-linux-gnu/libGLESv2.so.2
-          #   libglx0          - /usr/lib/aarch64-linux-gnu/libGLX.so.0
-          #   libglvnd0        - общий GLVND runtime
-          #   libopengl0       - GLVND OpenGL dispatch
-          # Все они должны быть в Provides/Replaces/Breaks, иначе dpkg падает
-          # на "trying to overwrite ..." или на "installing ... would break ...".
           cat <<EOF > $PKG_DIR/DEBIAN/control
-          Package: mesa-rk3588
+          Package: mesa-rk3588-opt
           Version: ${MESA_VER}-1rk3588
           Architecture: arm64
           Maintainer: RK3588 Builder <builder@local>
-          Depends: firmware-mali-rk3588, libdrm2, libwayland-client0, libwayland-server0, libexpat1, zlib1g, libzstd1
-          Provides: libgl1-mesa-dri, libegl-mesa0, libglx-mesa0, mesa-libgallium, mesa-vulkan-drivers, libgbm1, libegl1, libgl1, libglesv2-2, libglx0, libglvnd0, libopengl0, libglapi-mesa, libgles2, libosmesa6
-          Replaces: libgl1-mesa-dri, libegl-mesa0, libglx-mesa0, mesa-libgallium, mesa-vulkan-drivers, libgbm1, libegl1, libgl1, libglesv2-2, libglx0, libglvnd0, libopengl0, libglapi-mesa, libgles2, libosmesa6
-          Breaks: libgl1-mesa-dri (<< ${MESA_UPSTREAM}), libegl-mesa0 (<< ${MESA_UPSTREAM}), libglx-mesa0 (<< ${MESA_UPSTREAM}), mesa-libgallium (<< ${MESA_UPSTREAM}), mesa-vulkan-drivers (<< ${MESA_UPSTREAM}), libgbm1 (<< ${MESA_UPSTREAM}), libegl1 (<< ${MESA_UPSTREAM}), libgl1 (<< ${MESA_UPSTREAM}), libglesv2-2 (<< ${MESA_UPSTREAM}), libglx0 (<< ${MESA_UPSTREAM}), libglvnd0 (<< ${MESA_UPSTREAM}), libopengl0 (<< ${MESA_UPSTREAM}), libglapi-mesa (<< ${MESA_UPSTREAM}), libgles2 (<< ${MESA_UPSTREAM}), libosmesa6 (<< ${MESA_UPSTREAM})
-          Description: Mesa 3D graphics library with Panfrost/Panthor support for RK3588
+          Depends: firmware-mali-rk3588, libdrm2, libwayland-client0, libwayland-server0, libexpat1, zlib1g, libzstd1, libvulkan1
+          Description: Mesa 27.0.0 (Panfrost/Panthor) installed in /opt/mesa-rk3588 for RK3588 media stack
           EOF
-          dpkg-deb --build --root-owner-group "$PKG_DIR" "$DEB_OUT/mesa-rk3588_${MESA_VER}_arm64.deb"
+          dpkg-deb --build --root-owner-group "$PKG_DIR" "$DEB_OUT/mesa-rk3588-opt_${MESA_VER}_arm64.deb"
 
-      - name: Build and Package FFmpeg (V4L2-Request)
+      - name: Build FFmpeg (V4L2-Request) — system prefix
         run: |
           rm -rf /tmp/ffmpeg
           git clone --depth 1 --branch v4l2request-v3 https://code.ffmpeg.org/Kwiboo/FFmpeg.git /tmp/ffmpeg || \
@@ -279,7 +258,7 @@ jobs:
           Version: ${FF_VER}-1rk3588
           Architecture: arm64
           Maintainer: RK3588 Builder <builder@local>
-          Depends: mesa-rk3588, libdrm2, libudev1, libass9, libfreetype6, libfontconfig1, libfribidi0, libharfbuzz0b, libpulse0, libasound2t64, libvulkan1
+          Depends: libdrm2, libudev1, libass9, libfreetype6, libfontconfig1, libfribidi0, libharfbuzz0b, libpulse0, libasound2t64, libvulkan1
           Provides: ffmpeg, libavcodec-dev, libavformat-dev, libavutil-dev, libswscale-dev, libswresample-dev, libavcodec62, libavformat62, libavutil60, libswscale9, libswresample6, libavfilter11, libavdevice62
           Replaces: ffmpeg, libavcodec62, libavformat62, libavutil60, libswscale9, libswresample6, libavfilter11, libavdevice62
           Breaks: ffmpeg, libavcodec62, libavformat62, libavutil60, libswscale9, libswresample6, libavfilter11, libavdevice62
@@ -287,7 +266,7 @@ jobs:
           EOF
           dpkg-deb --build --root-owner-group "$PKG_DIR" "$DEB_OUT/ffmpeg-rk3588_${FF_VER}_arm64.deb"
 
-      - name: Build and Package MPV
+      - name: Build MPV (system prefix + wrapper script for /opt Mesa)
         run: |
           rm -rf /tmp/mpv
           git clone --depth 1 --branch v0.41.0 https://github.com/mpv-player/mpv.git /tmp/mpv
@@ -316,10 +295,20 @@ jobs:
           meson compile -C /tmp/mpv/build
           DESTDIR=$PKG_DIR meson install -C /tmp/mpv/build
 
+          # Скрипт-обёртка: выставляет окружение для Mesa из /opt и запускает mpv
+          mkdir -p $PKG_DIR/usr/local/bin
+          cat <<'WRAPPER' > $PKG_DIR/usr/local/bin/mpv-rk3588
+          #!/bin/bash
+          # Обёртка для mpv с Mesa из /opt/mesa-rk3588 (не трогает системную Mesa для GNOME)
+          MESA_PREFIX=/opt/mesa-rk3588
+          export LD_LIBRARY_PATH="$MESA_PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          export LIBGL_DRIVERS_PATH="$MESA_PREFIX/lib/dri"
+          export VK_ICD_FILENAMES="$MESA_PREFIX/share/vulkan/icd.d/panfrost_icd.cortex-a76.json"
+          exec /usr/bin/mpv "$@"
+          WRAPPER
+          chmod 755 $PKG_DIR/usr/local/bin/mpv-rk3588
+
           mkdir -p $PKG_DIR/etc/mpv
-          # ВАЖНО: на Mali-G610 нет Vulkan Video Decode (VK_KHR_video_decode_queue),
-          # поэтому hwdec должен быть v4l2request, а не auto-copy/vulkan.
-          # Vulkan-вывод (gpu-api=vulkan) пока нестабилен на PanVK — используем OpenGL.
           cat <<EOF > $PKG_DIR/etc/mpv/mpv.conf
           hwdec=v4l2request
           vo=gpu-next
@@ -327,18 +316,15 @@ jobs:
           EOF
 
           mkdir -p $PKG_DIR/DEBIAN
-          # libxss1, libxext6, libxinerama1, libxrandr2, libxcursor1, libxi6 —
-          # нужны для X11-вывода (mpv собран с -Dx11=enabled), на minimal-системе
-          # могут отсутствовать. Добавляем явно, чтобы не падало с "libXss.so.1: cannot open shared object file".
           cat <<EOF > $PKG_DIR/DEBIAN/control
           Package: mpv-rk3588
           Version: ${MPV_VER}-1rk3588
           Architecture: arm64
           Maintainer: RK3588 Builder <builder@local>
-          Depends: ffmpeg-rk3588, mesa-rk3588, libluajit-5.1-2t64 | libluajit-5.1-2, libplacebo360 | libplacebo349 | libplacebo338, libdisplay-info3, libxpresent1, libdrm2, libwayland-client0, libx11-6, libxss1, libxext6, libxinerama1, libxrandr2, libxcursor1, libxi6, libpipewire-0.3-0t64, libpulse0, libasound2t64, libvulkan1
+          Depends: mesa-rk3588-opt, ffmpeg-rk3588, libluajit-5.1-2t64 | libluajit-5.1-2, libplacebo360 | libplacebo349 | libplacebo338, libdisplay-info3, libxpresent1, libdrm2, libwayland-client0, libx11-6, libxss1, libxext6, libxinerama1, libxrandr2, libxcursor1, libxi6, libpipewire-0.3-0t64, libpulse0, libasound2t64, libvulkan1
           Provides: mpv, libmpv2
           Replaces: mpv
-          Description: MPV media player with RK3588 hardware video decoding, LuaJIT OSC and Vulkan/DRM support
+          Description: MPV media player (wrapper uses Mesa from /opt/mesa-rk3588, GNOME uses system Mesa)
           EOF
           dpkg-deb --build --root-owner-group "$PKG_DIR" "$DEB_OUT/mpv-rk3588_${MPV_VER}_arm64.deb"
 
