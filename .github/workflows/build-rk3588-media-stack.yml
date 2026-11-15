@@ -128,7 +128,6 @@ jobs:
           rm -rf /tmp/mesa
           git clone --depth 1 https://gitlab.freedesktop.org/mesa/mesa.git /tmp/mesa
           MESA_BASE=$(cat /tmp/mesa/VERSION | tr -d '[:space:]' | sed 's/-devel//')
-          # Fallback на случай, если VERSION окажется пустым/нестандартным.
           MESA_UPSTREAM="${MESA_BASE:-27.0.0}"
           MESA_HASH=$(git -C /tmp/mesa rev-parse --short HEAD)
           MESA_VER="${MESA_BASE}+git${MESA_HASH}"
@@ -200,20 +199,29 @@ jobs:
           DESTDIR=$PKG_DIR meson install -C /tmp/mesa/build
 
           mkdir -p $PKG_DIR/DEBIAN
-          # mesa-libgallium — новый пакет в Ubuntu 26.04/26.10, содержит
-          # /usr/share/drirc.d/00-panfrost-defaults.conf и общую Gallium-инфраструктуру.
-          # Без него dpkg падает на конфликте файла при установке поверх системной Mesa.
-          # Поэтому добавляем его в Provides/Replaces/Breaks наравне с остальными
-          # virtual-пакетами mesa.
+          # ВАЖНО: в Ubuntu 26.10 (stonking) файлы, которые ставит наша Mesa,
+          # принадлежат нескольким системным пакетам:
+          #   libgbm1          - /usr/lib/aarch64-linux-gnu/gbm/dri_gbm.so, libgbm.so.1.0.0
+          #   libgl1-mesa-dri  - /usr/lib/aarch64-linux-gnu/dri/libdril_dri.so, 00-mesa-defaults.conf
+          #   mesa-libgallium  - /usr/share/drirc.d/00-panfrost-defaults.conf
+          #   mesa-vulkan-drivers - libvulkan_panfrost.so, 00-panvk-defaults.conf
+          #   libegl1          - /usr/lib/aarch64-linux-gnu/libEGL.so.1
+          #   libgl1           - /usr/lib/aarch64-linux-gnu/libGL.so.1
+          #   libglesv2-2      - /usr/lib/aarch64-linux-gnu/libGLESv2.so.2
+          #   libglx0          - /usr/lib/aarch64-linux-gnu/libGLX.so.0
+          #   libglvnd0        - общий GLVND runtime
+          #   libopengl0       - GLVND OpenGL dispatch
+          # Все они должны быть в Provides/Replaces/Breaks, иначе dpkg падает
+          # на "trying to overwrite ..." или на "installing ... would break ...".
           cat <<EOF > $PKG_DIR/DEBIAN/control
           Package: mesa-rk3588
           Version: ${MESA_VER}-1rk3588
           Architecture: arm64
           Maintainer: RK3588 Builder <builder@local>
           Depends: firmware-mali-rk3588, libdrm2, libwayland-client0, libwayland-server0, libexpat1, zlib1g, libzstd1
-          Provides: libgl1-mesa-dri, libegl-mesa0, libgbm1, mesa-vulkan-drivers, libglx-mesa0, libglapi-mesa, libgles2, libosmesa6, mesa-libgallium
-          Replaces: libgl1-mesa-dri, libegl-mesa0, libgbm1, mesa-vulkan-drivers, libglx-mesa0, libglapi-mesa, libgles2, libosmesa6, mesa-libgallium
-          Breaks: libgl1-mesa-dri (<< ${MESA_UPSTREAM}), libegl-mesa0 (<< ${MESA_UPSTREAM}), libgbm1 (<< ${MESA_UPSTREAM}), mesa-vulkan-drivers (<< ${MESA_UPSTREAM}), libglx-mesa0 (<< ${MESA_UPSTREAM}), libglapi-mesa (<< ${MESA_UPSTREAM}), libgles2 (<< ${MESA_UPSTREAM}), libosmesa6 (<< ${MESA_UPSTREAM}), mesa-libgallium (<< ${MESA_UPSTREAM})
+          Provides: libgl1-mesa-dri, libegl-mesa0, libglx-mesa0, mesa-libgallium, mesa-vulkan-drivers, libgbm1, libegl1, libgl1, libglesv2-2, libglx0, libglvnd0, libopengl0, libglapi-mesa, libgles2, libosmesa6
+          Replaces: libgl1-mesa-dri, libegl-mesa0, libglx-mesa0, mesa-libgallium, mesa-vulkan-drivers, libgbm1, libegl1, libgl1, libglesv2-2, libglx0, libglvnd0, libopengl0, libglapi-mesa, libgles2, libosmesa6
+          Breaks: libgl1-mesa-dri (<< ${MESA_UPSTREAM}), libegl-mesa0 (<< ${MESA_UPSTREAM}), libglx-mesa0 (<< ${MESA_UPSTREAM}), mesa-libgallium (<< ${MESA_UPSTREAM}), mesa-vulkan-drivers (<< ${MESA_UPSTREAM}), libgbm1 (<< ${MESA_UPSTREAM}), libegl1 (<< ${MESA_UPSTREAM}), libgl1 (<< ${MESA_UPSTREAM}), libglesv2-2 (<< ${MESA_UPSTREAM}), libglx0 (<< ${MESA_UPSTREAM}), libglvnd0 (<< ${MESA_UPSTREAM}), libopengl0 (<< ${MESA_UPSTREAM}), libglapi-mesa (<< ${MESA_UPSTREAM}), libgles2 (<< ${MESA_UPSTREAM}), libosmesa6 (<< ${MESA_UPSTREAM})
           Description: Mesa 3D graphics library with Panfrost/Panthor support for RK3588
           EOF
           dpkg-deb --build --root-owner-group "$PKG_DIR" "$DEB_OUT/mesa-rk3588_${MESA_VER}_arm64.deb"
