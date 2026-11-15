@@ -94,13 +94,15 @@ jobs:
           mkdir -p $SYSROOT $DEB_OUT
           mmdebstrap --arch=arm64 --variant=minbase \
             --components=main,universe \
-            --include=libc6-dev,libstd-rust-dev,libdrm-dev,libdisplay-info-dev,libudev-dev,libwayland-dev,libwayland-egl-backend-dev,libx11-dev,libxext-dev,libxfixes-dev,libxpresent-dev,libxcb-glx0-dev,libxcb-shm0-dev,libx11-xcb-dev,libxcb-dri2-0-dev,libxcb-dri3-dev,libxcb-present-dev,libxshmfence-dev,libxxf86vm-dev,libxrandr-dev,libelf-dev,libexpat1-dev,zlib1g-dev,libzstd-dev,libass-dev,libfreetype-dev,libfontconfig-dev,libfribidi-dev,libharfbuzz-dev,libplacebo-dev,libvulkan-dev,libpulse-dev,libasound2-dev,libpipewire-0.3-dev,libsdl2-dev,libluajit-5.1-dev \
+            --include=libc6-dev,libstd-rust-dev,libdrm-dev,libdisplay-info-dev,libudev-dev,libwayland-dev,libwayland-egl-backend-dev,libx11-dev,libxext-dev,libxfixes-dev,libxpresent-dev,libxcb-glx0-dev,libxcb-shm0-dev,libx11-xcb-dev,libxcb-dri2-0-dev,libxcb-dri3-dev,libxcb-present-dev,libxshmfence-dev,libxxf86vm-dev,libxrandr-dev,libelf-dev,libexpat1-dev,zlib1g-dev,libzstd-dev,libass-dev,libfreetype-dev,libfontconfig-dev,libfribidi-dev,libharfbuzz-dev,libplacebo-dev,libvulkan-dev,libpulse-dev,libasound2-dev,libpipewire-0.3-dev,libsdl2-dev,libluajit-5.1-dev,wayland-protocols \
             $UBUNTU_CODENAME $SYSROOT http://ports.ubuntu.com/ubuntu-ports
           find $SYSROOT -lname '/*' -exec sh -c 'ln -snf "$SYSROOT$(readlink "$1")" "$1"' _ {} \;
           HOST_RUSTLIB="$(rustc --print sysroot)/lib/rustlib"
           TARGET_RUSTLIB=$(find $SYSROOT/usr/lib -type d -name "aarch64-unknown-linux-gnu" | grep rustlib | head -n 1)
           mkdir -p "$HOST_RUSTLIB"
           ln -snf "$TARGET_RUSTLIB" "$HOST_RUSTLIB/aarch64-unknown-linux-gnu"
+          # Проверка, что wayland-protocols действительно установлен в sysroot
+          ls -la $SYSROOT/usr/share/pkgconfig/wayland-protocols.pc || true
 
       - name: Package Mali-G610 CSF Firmware (Panthor)
         run: |
@@ -129,7 +131,6 @@ jobs:
           MESA_VER="${MESA_BASE}+git${MESA_HASH}"
           PKG_DIR=/tmp/pkg-mesa-opt
 
-          # SPIRV-LLVM-Translator (из кэша или сборка)
           if [ ! -f /usr/local/lib/libLLVMSPIRVLib.so ] || [ ! -x /usr/local/bin/llvm-spirv ]; then
             rm -rf /tmp/spirv-llvm /tmp/spirv-headers
             git clone --depth 1 --branch llvm_release_220 https://github.com/KhronosGroup/SPIRV-LLVM-Translator.git /tmp/spirv-llvm || \
@@ -149,7 +150,6 @@ jobs:
             ldconfig
           fi
 
-          # Native precompilers
           rm -rf /tmp/mesa/build-host
           PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkgconfig \
           meson setup /tmp/mesa/build-host /tmp/mesa \
@@ -171,7 +171,6 @@ jobs:
           install -m 755 /tmp/mesa/build-host/src/compiler/spirv/vtn_bindgen2 /usr/local/bin/vtn_bindgen2
           install -m 755 /tmp/mesa/build-host/src/panfrost/clc/panfrost_compile /usr/local/bin/panfrost_compile
 
-          # Кросс-сборка в /opt/mesa-rk3588
           rm -rf /tmp/mesa/build
           meson setup /tmp/mesa/build /tmp/mesa \
             --cross-file rk3588-ubuntu2610.ini \
@@ -193,7 +192,6 @@ jobs:
           meson compile -C /tmp/mesa/build
           DESTDIR=$PKG_DIR meson install -C /tmp/mesa/build
 
-          # Control-файл БЕЗ Breaks/Replaces/Provides — никаких конфликтов с системой
           mkdir -p $PKG_DIR/DEBIAN
           cat <<EOF > $PKG_DIR/DEBIAN/control
           Package: mesa-rk3588-opt
@@ -295,7 +293,6 @@ jobs:
           meson compile -C /tmp/mpv/build
           DESTDIR=$PKG_DIR meson install -C /tmp/mpv/build
 
-          # Скрипт-обёртка: выставляет окружение для Mesa из /opt и запускает mpv
           mkdir -p $PKG_DIR/usr/local/bin
           cat <<'WRAPPER' > $PKG_DIR/usr/local/bin/mpv-rk3588
           #!/bin/bash
