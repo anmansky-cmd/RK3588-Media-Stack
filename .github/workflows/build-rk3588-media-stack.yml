@@ -20,7 +20,6 @@ jobs:
       # ВАЖНО: зафиксируй образ по digest для воспроизводимости.
       # Получить: docker pull ubuntu:26.10 && docker inspect --format='{{index .RepoDigests 0}}' ubuntu:26.10
       # Затем заменить строку ниже на: ubuntu@sha256:<digest>
-      # Пока оставлен тег — сборка рабочая, но невоспроизводимая на 100%.
       image: ubuntu:26.10
       options: --privileged
 
@@ -45,8 +44,6 @@ jobs:
             ln -sf "$HOME/.cargo/bin/bindgen" /usr/local/bin/bindgen
           fi
 
-      # Кэш SPIRV-LLVM-Translator: самая долгая часть native-сборки Mesa (~2-3 мин).
-      # Ключ завязан на cross-file, чтобы инвалидироваться при смене флагов.
       - name: Cache SPIRV-LLVM-Translator (host)
         uses: actions/cache@v4
         id: cache-spirv
@@ -128,14 +125,11 @@ jobs:
 
       - name: Build and Package Mesa (Panfrost / Panthor / PanVK)
         run: |
-          # Клонируем Mesa всегда (быстро, ~10 сек), build-каталоги не кэшируем
-          # из-за абсолютных путей и привязки к sysroot.
           rm -rf /tmp/mesa
           git clone --depth 1 https://gitlab.freedesktop.org/mesa/mesa.git /tmp/mesa
           MESA_BASE=$(cat /tmp/mesa/VERSION | tr -d '[:space:]' | sed 's/-devel//')
-          # MESA_BASE для Breaks: используем мажорную часть (27.0.0), чтобы сравнение
-          # с системными пакетами было корректным.
-          MESA_UPSTREAM="${MESA_BASE}"
+          # Fallback на случай, если VERSION окажется пустым/нестандартным.
+          MESA_UPSTREAM="${MESA_BASE:-27.0.0}"
           MESA_HASH=$(git -C /tmp/mesa rev-parse --short HEAD)
           MESA_VER="${MESA_BASE}+git${MESA_HASH}"
           PKG_DIR=/tmp/pkg-mesa
@@ -160,7 +154,7 @@ jobs:
             ldconfig
           fi
 
-          # 2. Native precompilers на хосте (x86_64) — быстрые, пересобираем всегда
+          # 2. Native precompilers на хосте (x86_64)
           rm -rf /tmp/mesa/build-host
           PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkgconfig \
           meson setup /tmp/mesa/build-host /tmp/mesa \
@@ -206,20 +200,20 @@ jobs:
           DESTDIR=$PKG_DIR meson install -C /tmp/mesa/build
 
           mkdir -p $PKG_DIR/DEBIAN
-          # Replaces: чтобы dpkg -i не падал на конфликте файлов с системными пакетами.
-          # Provides: чтобы зависимости других пакетов от libglx-mesa0/libglapi-mesa/libgles2/libosmesa6
-          #           считались удовлетворёнными.
-          # Breaks: мягкая несовместимость со старыми версиями — apt корректно разрулит при apt install.
-          #         Conflicts НЕ используем, чтобы не ломать зависимости.
+          # mesa-libgallium — новый пакет в Ubuntu 26.04/26.10, содержит
+          # /usr/share/drirc.d/00-panfrost-defaults.conf и общую Gallium-инфраструктуру.
+          # Без него dpkg падает на конфликте файла при установке поверх системной Mesa.
+          # Поэтому добавляем его в Provides/Replaces/Breaks наравне с остальными
+          # virtual-пакетами mesa.
           cat <<EOF > $PKG_DIR/DEBIAN/control
           Package: mesa-rk3588
           Version: ${MESA_VER}-1rk3588
           Architecture: arm64
           Maintainer: RK3588 Builder <builder@local>
           Depends: firmware-mali-rk3588, libdrm2, libwayland-client0, libwayland-server0, libexpat1, zlib1g, libzstd1
-          Provides: libgl1-mesa-dri, libegl-mesa0, libgbm1, mesa-vulkan-drivers, libglx-mesa0, libglapi-mesa, libgles2, libosmesa6
-          Replaces: libgl1-mesa-dri, libegl-mesa0, libgbm1, mesa-vulkan-drivers, libglx-mesa0, libglapi-mesa, libgles2, libosmesa6
-          Breaks: libgl1-mesa-dri (<< ${MESA_UPSTREAM}), libegl-mesa0 (<< ${MESA_UPSTREAM}), libgbm1 (<< ${MESA_UPSTREAM}), mesa-vulkan-drivers (<< ${MESA_UPSTREAM}), libglx-mesa0 (<< ${MESA_UPSTREAM}), libglapi-mesa (<< ${MESA_UPSTREAM}), libgles2 (<< ${MESA_UPSTREAM}), libosmesa6 (<< ${MESA_UPSTREAM})
+          Provides: libgl1-mesa-dri, libegl-mesa0, libgbm1, mesa-vulkan-drivers, libglx-mesa0, libglapi-mesa, libgles2, libosmesa6, mesa-libgallium
+          Replaces: libgl1-mesa-dri, libegl-mesa0, libgbm1, mesa-vulkan-drivers, libglx-mesa0, libglapi-mesa, libgles2, libosmesa6, mesa-libgallium
+          Breaks: libgl1-mesa-dri (<< ${MESA_UPSTREAM}), libegl-mesa0 (<< ${MESA_UPSTREAM}), libgbm1 (<< ${MESA_UPSTREAM}), mesa-vulkan-drivers (<< ${MESA_UPSTREAM}), libglx-mesa0 (<< ${MESA_UPSTREAM}), libglapi-mesa (<< ${MESA_UPSTREAM}), libgles2 (<< ${MESA_UPSTREAM}), libosmesa6 (<< ${MESA_UPSTREAM}), mesa-libgallium (<< ${MESA_UPSTREAM})
           Description: Mesa 3D graphics library with Panfrost/Panthor support for RK3588
           EOF
           dpkg-deb --build --root-owner-group "$PKG_DIR" "$DEB_OUT/mesa-rk3588_${MESA_VER}_arm64.deb"
@@ -272,9 +266,6 @@ jobs:
           make DESTDIR=$PKG_DIR install
 
           mkdir -p $PKG_DIR/DEBIAN
-          # SONAME-версии взяты из лога сборки (libavcodec.so.62 и т.д.).
-          # Если FFmpeg-ветка обновится и SONAME сменятся — поправить здесь
-          # (objdump -p /usr/lib/aarch64-linux-gnu/libavcodec.so.* | grep SONAME).
           cat <<EOF > $PKG_DIR/DEBIAN/control
           Package: ffmpeg-rk3588
           Version: ${FF_VER}-1rk3588
@@ -325,8 +316,6 @@ jobs:
           EOF
 
           mkdir -p $PKG_DIR/DEBIAN
-          # libluajit-5.1-2t64 | libluajit-5.1-2: в Ubuntu 24.04+ LuaJIT прошёл
-          # time_t-transition, имя пакета зависит от релиза. Fallback безопасен.
           cat <<EOF > $PKG_DIR/DEBIAN/control
           Package: mpv-rk3588
           Version: ${MPV_VER}-1rk3588
