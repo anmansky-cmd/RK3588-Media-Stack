@@ -245,6 +245,7 @@ jobs:
             --enable-libpulse \
             --enable-alsa \
             --enable-vulkan \
+            --enable-network \
             --enable-gnutls
 
           make -j$(nproc)
