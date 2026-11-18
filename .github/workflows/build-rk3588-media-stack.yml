@@ -259,7 +259,7 @@ jobs:
           Version: ${FF_VER}-1rk3588
           Architecture: arm64
           Maintainer: RK3588 Builder <builder@local>
-          Depends: libdrm2, libudev1, libass9, libfreetype6, libfontconfig1, libfribidi0, libharfbuzz0b, libpulse0, libasound2t64, libvulkan1
+          Depends: libdrm2, libudev1, libass9, libfreetype6, libfontconfig1, libfribidi0, libharfbuzz0b, libpulse0, libasound2t64, libvulkan1, libgnutls30t64
           Provides: ffmpeg, libavcodec-dev, libavformat-dev, libavutil-dev, libswscale-dev, libswresample-dev, libavcodec62, libavformat62, libavutil60, libswscale9, libswresample6, libavfilter11, libavdevice62
           Replaces: ffmpeg, libavcodec62, libavformat62, libavutil60, libswscale9, libswresample6, libavfilter11, libavdevice62
           Breaks: ffmpeg, libavcodec62, libavformat62, libavutil60, libswscale9, libswresample6, libavfilter11, libavdevice62
