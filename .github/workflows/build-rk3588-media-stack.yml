@@ -246,6 +246,7 @@ jobs:
             --enable-alsa \
             --enable-vulkan \
             --enable-network \
+            --enable-protocol=https,http,tls,tcp,hls,crypto \
             --enable-gnutls
 
           make -j$(nproc)
@@ -312,6 +313,7 @@ jobs:
           hwdec=v4l2request
           vo=gpu-next
           gpu-api=opengl
+          profile=fast
           EOF
 
           mkdir -p $PKG_DIR/DEBIAN
