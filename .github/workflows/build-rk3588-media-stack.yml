@@ -270,8 +270,8 @@ jobs:
       - name: Build MPV (system prefix + wrapper script for /opt Mesa)
         run: |
           rm -rf /tmp/mpv
-          git clone --depth 1 --branch v0.42.0 https://github.com/mpv-player/mpv.git /tmp/mpv
-          MPV_BASE="0.42.0"
+          git clone --depth 1 --branch v0.41.0 https://github.com/mpv-player/mpv.git /tmp/mpv
+          MPV_BASE="0.41.0"
           MPV_HASH=$(git -C /tmp/mpv rev-parse --short HEAD | tr -d '[:space:]')
           MPV_VER="${MPV_BASE}+git${MPV_HASH}"
           PKG_DIR=/tmp/pkg-mpv
@@ -314,14 +314,14 @@ jobs:
           vo=gpu-next
           gpu-api=opengl
           profile=fast
-          hls-bitrate=max
-          cache=yes
-          demuxer-max-bytes=150MiB
-          demuxer-readahead-secs=20
-          stream-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_delay_max=5
-          user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
-          sid=no
-          sub-auto=no
+          #hls-bitrate=max
+          #cache=yes
+          #demuxer-max-bytes=150MiB
+          #demuxer-readahead-secs=20
+          #stream-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_delay_max=5
+          #user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+          #sid=no
+          #sub-auto=no
           EOF
 
           mkdir -p $PKG_DIR/DEBIAN
