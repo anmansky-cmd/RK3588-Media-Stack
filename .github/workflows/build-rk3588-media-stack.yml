@@ -270,8 +270,8 @@ jobs:
       - name: Build MPV (system prefix + wrapper script for /opt Mesa)
         run: |
           rm -rf /tmp/mpv
-          git clone --depth 1 --branch v0.41.0 https://github.com/mpv-player/mpv.git /tmp/mpv
-          MPV_BASE="0.41.0"
+          git clone --depth 1 --branch v0.42.0 https://github.com/mpv-player/mpv.git /tmp/mpv
+          MPV_BASE="0.42.0"
           MPV_HASH=$(git -C /tmp/mpv rev-parse --short HEAD | tr -d '[:space:]')
           MPV_VER="${MPV_BASE}+git${MPV_HASH}"
           PKG_DIR=/tmp/pkg-mpv
