@@ -244,6 +244,9 @@ jobs:
             --enable-libharfbuzz \
             --enable-libpulse \
             --enable-alsa \
+            --enable-demuxer=hls,mpegts,mov,aac,mp3 \
+            --enable-parser=h264,hevc,aac,mp3 \
+            --enable-decoder=h264,hevc,aac,mp3 \
             --enable-vulkan \
             --enable-network \
             --enable-protocol=https,http,tls,tcp,hls,crypto \
