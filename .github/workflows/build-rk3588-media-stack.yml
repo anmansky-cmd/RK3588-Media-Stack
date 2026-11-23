@@ -238,15 +238,16 @@ jobs:
             --enable-v4l2-request \
             --enable-libudev \
             --enable-libass \
+            --enable-libdav1d \
             --enable-libfreetype \
             --enable-libfontconfig \
             --enable-libfribidi \
             --enable-libharfbuzz \
             --enable-libpulse \
             --enable-alsa \
-            --enable-demuxer=hls,mpegts,mov,aac,mp3 \
-            --enable-parser=h264,hevc,aac,mp3 \
-            --enable-decoder=h264,hevc,aac,mp3 \
+            --enable-demuxer=hls,mpegts,mov,aac,ivf,mp3 \
+            --enable-parser=h264,hevc,aac,av1,mp3 \
+            --enable-decoder=h264,hevc,aac,av1,mp3 \
             --enable-vulkan \
             --enable-network \
             --enable-protocol=https,http,tls,tcp,hls,crypto \
@@ -262,7 +263,7 @@ jobs:
           Version: ${FF_VER}-1rk3588
           Architecture: arm64
           Maintainer: RK3588 Builder <builder@local>
-          Depends: libdrm2, libudev1, libass9, libfreetype6, libfontconfig1, libfribidi0, libharfbuzz0b, libpulse0, libasound2t64, libvulkan1, libgnutls30t64
+          Depends: libdrm2, libudev1, libass9, libfreetype6, libfontconfig1, libfribidi0, libharfbuzz0b, libpulse0, libasound2t64, libvulkan1, libgnutls30t64, libdav1d7 
           Provides: ffmpeg, libavcodec-dev, libavformat-dev, libavutil-dev, libswscale-dev, libswresample-dev, libavcodec62, libavformat62, libavutil60, libswscale9, libswresample6, libavfilter11, libavdevice62
           Replaces: ffmpeg, libavcodec62, libavformat62, libavutil60, libswscale9, libswresample6, libavfilter11, libavdevice62
           Breaks: ffmpeg, libavcodec62, libavformat62, libavutil60, libswscale9, libswresample6, libavfilter11, libavdevice62
