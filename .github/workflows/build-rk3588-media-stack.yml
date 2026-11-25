@@ -233,7 +233,8 @@ jobs:
             --enable-shared \
             --disable-static \
             --disable-doc \
-            --enable-libdrm \
+            --enable-libdr \
+            --enable-libaomm \
             --enable-v4l2-m2m \
             --enable-v4l2-request \
             --enable-hwaccel=h264_v4l2request,hevc_v4l2request,av1_v4l2request \
