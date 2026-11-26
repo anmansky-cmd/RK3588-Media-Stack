@@ -206,7 +206,7 @@ jobs:
       - name: Build FFmpeg (V4L2-Request) — system prefix
         run: |
           rm -rf /tmp/ffmpeg
-          git clone --depth 1 --branch v4l2request-2025-v3-rkvdec https://code.ffmpeg.org/Kwiboo/FFmpeg.git /tmp/ffmpeg || \
+          git clone --depth 1 --branch v4l2request-v3 https://code.ffmpeg.org/Kwiboo/FFmpeg.git /tmp/ffmpeg || \
             git clone --depth 1 https://code.ffmpeg.org/Kwiboo/FFmpeg.git /tmp/ffmpeg
           FF_BASE=$(cat /tmp/ffmpeg/RELEASE 2>/dev/null | tr -d '[:space:]' | sed 's/[^0-9.].*//;s/\.*$//')
           [ -z "$FF_BASE" ] && FF_BASE="8.0"
