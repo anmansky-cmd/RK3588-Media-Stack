@@ -211,14 +211,12 @@ jobs:
 
           PATCH_DIR="$GITHUB_WORKSPACE/patches"
           if [ -d "$PATCH_DIR" ]; then
-            shopt -s nullglob
             for patch in "$PATCH_DIR"/*.patch "$PATCH_DIR"/*.diff; do
+              [ -e "$patch" ] || continue
               echo "Applying patch: $(basename "$patch")"
               git -C /tmp/ffmpeg apply --verbose "$patch"
             done
-            shopt -u nullglob
           fi
-
             
           FF_BASE=$(cat /tmp/ffmpeg/RELEASE 2>/dev/null | tr -d '[:space:]' | sed 's/[^0-9.].*//;s/\.*$//')
           [ -z "$FF_BASE" ] && FF_BASE="8.0"
