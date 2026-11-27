@@ -1,0 +1,103 @@
+From 87ac3d092472db9676a8075a681194308554fb37 Mon Sep 17 00:00:00 2001
+From: Cameron Gutman <aicommander@gmail.com>
+Date: Mon, 29 Dec 2025 14:19:37 -0600
+Subject: [PATCH] avcodec/av1dec: fix handling of frame size and format changes
+
+ff_get_format() must be called to reinitialize the hwaccel when the
+pixel format or frame size changes.
+
+This also fixes a bug where ff_get_format() was never called when
+AVCodecContext.pix_fmt was initialized by the user.
+
+Signed-off-by: Cameron Gutman <aicommander@gmail.com>
+---
+ libavcodec/av1dec.c | 27 ++++++++++++---------------
+ 1 file changed, 12 insertions(+), 15 deletions(-)
+
+diff --git a/libavcodec/av1dec.c b/libavcodec/av1dec.c
+index 1dffc7c1b95..6b278dc958a 100644
+--- a/libavcodec/av1dec.c
++++ b/libavcodec/av1dec.c
+@@ -656,12 +656,6 @@ static int get_pixel_format(AVCodecContext *avctx)
+     *fmtp++ = pix_fmt;
+     *fmtp = AV_PIX_FMT_NONE;
+ 
+-    for (int i = 0; pix_fmts[i] != pix_fmt; i++)
+-        if (pix_fmts[i] == avctx->pix_fmt) {
+-            s->pix_fmt = pix_fmt;
+-            return 1;
+-        }
+-
+     ret = ff_get_format(avctx, pix_fmts);
+ 
+     /**
+@@ -768,6 +762,7 @@ static av_cold int av1_decode_free(AVCodecContext *avctx)
+ static int set_context_with_sequence(AVCodecContext *avctx,
+                                      const AV1RawSequenceHeader *seq)
+ {
++    AV1DecContext *s = avctx->priv_data;
+     int width = seq->max_frame_width_minus_1 + 1;
+     int height = seq->max_frame_height_minus_1 + 1;
+ 
+@@ -804,7 +799,9 @@ FF_ENABLE_DEPRECATION_WARNINGS
+         int ret = ff_set_dimensions(avctx, width, height);
+         if (ret < 0)
+             return ret;
+-    }
++        s->pix_fmt = AV_PIX_FMT_NONE;
++    } else if (s->pix_fmt != get_sw_pixel_format(avctx, seq))
++        s->pix_fmt = AV_PIX_FMT_NONE;
+ 
+     if (seq->timing_info_present_flag)
+         avctx->framerate = ff_av1_framerate(1LL + seq->timing_info.num_ticks_per_picture_minus_1,
+@@ -820,6 +817,7 @@ FF_ENABLE_DEPRECATION_WARNINGS
+ static int update_context_with_frame_header(AVCodecContext *avctx,
+                                             const AV1RawFrameHeader *header)
+ {
++    AV1DecContext *s = avctx->priv_data;
+     AVRational aspect_ratio;
+     int width = header->frame_width_minus_1 + 1;
+     int height = header->frame_height_minus_1 + 1;
+@@ -831,6 +829,7 @@ static int update_context_with_frame_header(AVCodecContext *avctx,
+         ret = ff_set_dimensions(avctx, width, height);
+         if (ret < 0)
+             return ret;
++        s->pix_fmt = AV_PIX_FMT_NONE;
+     }
+ 
+     av_reduce(&aspect_ratio.num, &aspect_ratio.den,
+@@ -924,12 +923,6 @@ static int av1_frame_alloc(AVCodecContext *avctx, AV1Frame *f)
+     AVFrame *frame;
+     int ret;
+ 
+-    ret = update_context_with_frame_header(avctx, header);
+-    if (ret < 0) {
+-        av_log(avctx, AV_LOG_ERROR, "Failed to update context with frame header\n");
+-        return ret;
+-    }
+-
+     ret = ff_progress_frame_get_buffer(avctx, &f->pf, AV_GET_BUFFER_FLAG_REF);
+     if (ret < 0)
+         goto fail;
+@@ -1234,6 +1227,12 @@ static int get_current_frame(AVCodecContext *avctx)
+         avctx->skip_frame >= AVDISCARD_ALL)
+         return 0;
+ 
++    ret = update_context_with_frame_header(avctx, s->raw_frame_header);
++    if (ret < 0) {
++        av_log(avctx, AV_LOG_ERROR, "Failed to update context with frame header\n");
++        return ret;
++    }
++
+     if (s->pix_fmt == AV_PIX_FMT_NONE) {
+         ret = get_pixel_format(avctx);
+         if (ret < 0) {
+@@ -1317,8 +1316,6 @@ static int av1_receive_frame_internal(AVCodecContext *avctx, AVFrame *frame)
+ 
+             s->operating_point_idc = s->raw_seq->operating_point_idc[s->operating_point];
+ 
+-            s->pix_fmt = AV_PIX_FMT_NONE;
+-
+             if (FF_HW_HAS_CB(avctx, decode_params)) {
+                 ret = FF_HW_CALL(avctx, decode_params, AV1_OBU_SEQUENCE_HEADER,
+                                  s->seq_data_ref->data, s->seq_data_ref->size);
