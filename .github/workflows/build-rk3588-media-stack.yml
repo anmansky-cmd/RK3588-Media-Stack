@@ -213,11 +213,16 @@ jobs:
           if [ -d "$PATCH_DIR" ]; then
             for patch in "$PATCH_DIR"/*.patch "$PATCH_DIR"/*.diff; do
               [ -e "$patch" ] || continue
-              echo "Applying patch: $(basename "$patch")"
-              git -C /tmp/ffmpeg apply --verbose "$patch"
+              echo "Checking patch: $(basename "$patch")"
+              if git -C /tmp/ffmpeg apply --check --forward "$patch" 2>/dev/null; then
+                echo "Applying patch: $(basename "$patch")"
+                git -C /tmp/ffmpeg apply --verbose "$patch"
+              else
+                echo "Skipping patch (already applied or not applicable): $(basename "$patch")"
+              fi
             done
           fi
-            
+      
           FF_BASE=$(cat /tmp/ffmpeg/RELEASE 2>/dev/null | tr -d '[:space:]' | sed 's/[^0-9.].*//;s/\.*$//')
           [ -z "$FF_BASE" ] && FF_BASE="8.0"
           FF_HASH=$(git -C /tmp/ffmpeg rev-parse --short HEAD)
