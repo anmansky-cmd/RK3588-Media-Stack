@@ -1,0 +1,85 @@
+From 661b02cf2dbc7bfc673e65abe16ec4c46626ffe8 Mon Sep 17 00:00:00 2001
+From: Thomas Glanzmann <thomas@glanzmann.de>
+Date: Fri, 27 Nov 2026 17:53:33 +0100
+Subject: [PATCH] avcodec/v4l2_request: wait on CAPTURE dma-buf fences before
+ reuse
+
+CAPTURE buffers allocated as V4L2_MEMORY_MMAP and exported with
+VIDIOC_EXPBUF are passed to zero-copy consumers (GPU/EGL, Wayland
+compositors, KMS) as DRM_PRIME dma-bufs. Those consumers attach
+implicit dma_resv fences when reading the buffer asynchronously, but
+videobuf2 does not wait on exported dma_buf fences when VIDIOC_QBUF
+re-queues an MMAP CAPTURE buffer.
+
+When a player unrefs the AVFrame right after submitting an async draw
+(for example mpv vo=gpu/opengl unmapping the previous frame right
+after eglSwapBuffers) and the decoder starts writing into the recycled
+CAPTURE buffer immediately, it overwrites the buffer while the GPU is
+still sampling it, producing brief flashing artefacts.
+
+Poll each exported DRM_PRIME dma-buf fd for POLLOUT (which waits on
+both read and write dma_resv fences in Linux dma_buf_poll) before
+reusing the CAPTURE buffer in ff_v4l2_request_start_frame().
+
+Signed-off-by: Thomas Glanzmann <thomas@glanzmann.de>
+---
+ libavcodec/v4l2_request.c | 36 ++++++++++++++++++++++++++++++++++++
+ 1 file changed, 36 insertions(+)
+
+diff --git a/libavcodec/v4l2_request.c b/libavcodec/v4l2_request.c
+index 3e8639ca08..32a6b8fa52 100644
+--- a/libavcodec/v4l2_request.c
++++ b/libavcodec/v4l2_request.c
+@@ -279,6 +279,37 @@ fail:
+     return AVERROR(EINVAL);
+ }
+ 
++static int v4l2_request_wait_on_dmabuf(V4L2RequestContext *ctx, AVFrame *frame)
++{
++    const AVDRMFrameDescriptor *desc = (const AVDRMFrameDescriptor *)frame->data[0];
++
++    if (!desc)
++        return 0;
++
++    for (int i = 0; i < FFMIN(desc->nb_objects, AV_DRM_MAX_PLANES); i++) {
++        struct pollfd pollfd = {
++            .fd = desc->objects[i].fd,
++            .events = POLLOUT,
++        };
++        int ret;
++
++        if (pollfd.fd < 0)
++            continue;
++
++        do {
++            ret = poll(&pollfd, 1, 2000);
++        } while (ret < 0 && errno == EINTR);
++
++        if (ret <= 0) {
++            av_log(ctx, AV_LOG_ERROR,
++                   "Failed waiting on CAPTURE dma-buf %d\n", pollfd.fd);
++            return ret < 0 ? AVERROR(errno) : AVERROR(ETIMEDOUT);
++        }
++    }
++
++    return 0;
++}
++
+ static V4L2RequestOutputBuffer *v4l2_request_next_output(V4L2RequestContext *ctx)
+ {
+     enum v4l2_buf_type type = ctx->fctxi->output.format.type;
+@@ -653,6 +684,11 @@ int ff_v4l2_request_start_frame(AVCodecContext *avctx,
+     if (ret)
+         return ret;
+ 
++    // Wait for downstream dma-buf consumers (GPU/display) to finish reading
++    ret = v4l2_request_wait_on_dmabuf(ctx, frame);
++    if (ret)
++        return ret;
++
+     v4l2_request_set_pitch(avctx, ctx, frame);
+ 
+     // Wait on CAPTURE buffer in post_process() before returning to application
+-- 
+2.53.0
+
