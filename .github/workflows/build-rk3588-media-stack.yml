@@ -263,6 +263,7 @@ jobs:
             --enable-demuxer=hls,mpegts,mov,aac,ivf,mp3 \
             --enable-parser=h264,hevc,aac,av1,mp3 \
             --enable-decoder=h264,hevc,aac,av1,mp3 \
+            --enable-libvorbis \
             --enable-vulkan \
             --enable-network \
             --enable-protocol=https,http,tls,tcp,hls,crypto \
